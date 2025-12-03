@@ -1,0 +1,58 @@
+version: "3.8"
+
+services:
+  zookeeper:
+    image: wurstmeister/zookeeper
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: wurstmeister/kafka
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://:9092
+    depends_on:
+      - zookeeper
+
+
+  db:
+    image: postgres:15
+    container_name: chat-db
+    environment:
+      - POSTGRES_USER=chat
+      - POSTGRES_PASSWORD=chatpass
+      - POSTGRES_DB=chatdb
+    ports:
+      - "5466:5432"
+    volumes:
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+
+  api:
+    build: ./api
+    container_name: chat-api
+    depends_on:
+      - kafka
+      - db
+    environment:
+      - PORT=3000
+      - DATABASE_URL=postgres://chat:chatpass@db:5432/chatdb
+      - KAFKA_BROKER=kafka:9092
+      - JWT_SECRET=supersecretjwt
+    ports:
+      - "3003:3000"
+
+  worker:
+    build: ./worker
+    container_name: chat-worker
+    depends_on:
+      - kafka
+      - db
+    environment:
+      - DATABASE_URL=postgres://chat:chatpass@db:5432/chatdb
+      - KAFKA_BROKER=kafka:9092

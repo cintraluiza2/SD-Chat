@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<body>
+  <h2>Teste WebSocket do chat-api</h2>
+  <pre id="log"></pre>
+
+  <script>
+    const log = (msg) => {
+      document.getElementById("log").textContent += msg + "\n";
+    };
+
+    // Conecta no WebSocket do container
+    const socket = io("http://localhost:3003");
+
+    socket.on("connect", () => {
+      log("🔌 Conectado ao WebSocket");
+    });
+
+    socket.on("disconnect", () => {
+      log("❌ Desconectado");
+    });
+
+    socket.on("message_delivered", (msg) => {
+      log("📩 Mensagem recebida via WS:");
+      log(JSON.stringify(msg, null, 2));
+    });
+  </script>
+
+  <!-- IMPORTANTE: cliente socket.io -->
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</body>
+</html>

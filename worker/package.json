@@ -1,0 +1,12 @@
+{
+  "name": "chat-worker",
+  "version": "1.0.0",
+  "main": "src/worker.js",
+  "scripts": {
+    "start": "node src/worker.js"
+  },
+  "dependencies": {
+    "pg": "^8.13.0",
+    "kafkajs": "^2.2.4"
+  }
+}
