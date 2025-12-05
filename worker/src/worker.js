@@ -1,5 +1,8 @@
 const { consumer, initKafkaConsumer } = require("./kafka");
 const db = require("./db");
+const startMetricsServer = require("./metrics");
+startMetricsServer();
+
 
 async function startWorker() {
   await initKafkaConsumer();
@@ -38,6 +41,11 @@ async function startWorker() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(msg)
       });
+
+      const endTimer = messageLatency.startTimer();
+      messagesProcessed.inc();
+      endTimer();
+
 
     },
   });

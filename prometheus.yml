@@ -1,0 +1,36 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  # --- API ---
+  - job_name: "chat_api"
+    static_configs:
+      - targets: ["chat-api:3000"]
+
+  # --- Workers (scaled) ---
+  # Descoberta DNS automática: funciona para containers gerados por escala
+  - job_name: "chat_workers"
+    dns_sd_configs:
+      - names:
+          - "worker"
+        type: A
+        port: 3002
+
+  # --- Connectors ---
+  - job_name: 'connectors'
+    dns_sd_configs:
+      - names:
+          - 'connector_whatsapp_mock'
+        type: 'A'
+        port: 4001
+
+      - names:
+          - 'connector_instagram_mock'
+        type: 'A'
+        port: 4002
+
+
+  # --- Node exporter ---
+  - job_name: 'node_exporter'
+    static_configs:
+      - targets: ['node_exporter:9100']

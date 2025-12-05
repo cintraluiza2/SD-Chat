@@ -54,18 +54,19 @@ services:
     ports:
       - "3003:3000"
 
-
-
-
   worker:
     build: ./worker
-    container_name: chat-worker
+   # container_name: chat-worker
     depends_on:
       - kafka
       - db
     environment:
-      - DATABASE_URL=postgres://chat:chatpass@db:5432/chatdb
-      - KAFKA_BROKER=kafka:9092
+      DATABASE_URL: "postgres://chat:chatpass@db:5432/chatdb"
+      KAFKA_BROKER: "kafka:9092"
+      CALLBACK_URL: "http://chat-api:3000/api/v1/events" #eu nao sei se precisa disso mesmo
+      METRICS_PORT: "3002"
+    ports:
+    - "3002"  
 
   minio:
     image: minio/minio
@@ -82,21 +83,51 @@ services:
 
   connector_whatsapp_mock:
     build: ./connector_whatsapp_mock
-    container_name: connector_whatsapp_mock
+   # container_name: connector_whatsapp_mock
     depends_on:
       - kafka
       - api
     environment:
       - KAFKA_BROKER=kafka:9092
       - CALLBACK_URL=http://api:3000/v1/events/message-delivered
+    ports:
+      - "4001:4001"  
 
   connector_instagram_mock:
     build: ./connector_instagram_mock
-    container_name: connector_instagram_mock
+   # container_name: connector_instagram_mock
     depends_on:
       - kafka
       - api
     environment:
       - KAFKA_BROKER=kafka:9092
       - CALLBACK_URL=http://api:3000/v1/events/message-delivered
+    ports:
+      - "4002:4000"
   
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+
+  node_exporter:
+    image: prom/node-exporter
+    container_name: node_exporter
+    ports:
+      - "9100:9100"
+    
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    ports:
+      - "3004:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin #a senha nova é admin123 e o user é admin
+    depends_on:
+      - prometheus
+

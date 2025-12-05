@@ -7,11 +7,20 @@ app.use(express.json());
 
 const CALLBACK_URL = process.env.CALLBACK_URL;
 const KAFKA_BROKER = process.env.KAFKA_BROKER || "kafka:9092";
+const client = require("prom-client");
+client.collectDefaultMetrics();
+
 
 const kafka = new Kafka({
   clientId: "connector-instagram",
   brokers: [KAFKA_BROKER]
 });
+
+app.get("/metrics", async (req, res) => {
+  res.set("Content-Type", client.register.contentType);
+  res.end(await client.register.metrics());
+});
+
 
 const consumer = kafka.consumer({ groupId: "instagram-mock-group" });
 
