@@ -1,5 +1,6 @@
 const express = require('express');
 const bodyParser = require('body-parser');
+const cors = require('cors');
 const http = require("http");
 
 const router = require('./routes');
@@ -7,10 +8,19 @@ const { initKafka } = require('./kafka');
 const { startWebSocketServer } = require("./websocket");
 const uploadRoutes = require("./routes-upload");
 const client = require("prom-client");
+
 const app = express();
-const server = http.createServer(app);  
+const server = http.createServer(app);
 const port = process.env.PORT || 3000;
 
+
+
+// Habilita CORS para todas as origens (ajuste origin se necessário)
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
 app.use(bodyParser.json());
 app.use('/api', router);
