@@ -265,6 +265,11 @@
   <div id="token-box"></div>
 
   <div id="conversation-area" style="display:none;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+      <h3 style="margin: 0;">💬 Conversas</h3>
+      <button onclick="logout()" style="background: #e74c3c; padding: 8px 12px; font-size: 14px;">🚪 Logout</button>
+    </div>
+    
     <h3>Criar conversa</h3>
     <input id="participants" placeholder="Participantes (separados por vírgula)" />
     <select id="conv-type">
@@ -274,13 +279,23 @@
     <button onclick="createConversation()">Criar</button>
     <div id="conv-status"></div>
     <hr>
+    
+    <h3>👥 Usuários Disponíveis</h3>
+    <button onclick="loadOnlineUsers()">Atualizar Usuários Online</button>
+    <ul id="online-users-list" style="margin-top: 10px;"></ul>
+    <hr>
+    
     <h3>Minhas conversas</h3>
+    <button onclick="loadConversations()" style="margin-bottom: 10px;">Atualizar Conversas</button>
     <ul id="conversations-list"></ul>
   </div>
 
   <div id="chat-area">
     <div class="chat-panel">
-      <h3>Chat</h3>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h3>Chat</h3>
+        <button onclick="voltarParaConversas()" style="background: #ff6b6b; padding: 8px 15px; font-size: 14px;">← Voltar para conversas</button>
+      </div>
       <div>Conversa ID: <span id="conv-id"></span></div>
       <div id="chat">
         <ul id="messages"></ul>
@@ -289,7 +304,7 @@
       <button onclick="sendMessage()">Enviar</button>
     </div>
     <div class="participants-panel">
-      <h4>Participantes</h4>
+      <h4>👥 Participantes</h4>
       <ul id="participants-list"></ul>
     </div>
   </div>
@@ -299,6 +314,82 @@
     let username = null;
     let conversationId = null;
     let ws = null;
+    let presenceInterval = null;
+    let heartbeatInterval = null;
+
+    // Notifica presença ao servidor quando usuario faz login
+    function setUserOnline() {
+      fetch('http://localhost:3003/api/v1/presence', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        },
+        body: JSON.stringify({ is_online: true })
+      })
+        .then(res => res.json())
+        .then(data => {
+          console.log('Status atualizado para ONLINE:', data);
+        })
+        .catch(err => console.error('Erro ao atualizar presença:', err));
+    }
+
+    // Mantém o usuário online com heartbeat a cada 10 segundos
+    function startHeartbeat() {
+      // Primeiro heartbeat imediato
+      setUserOnline();
+      
+      // Depois a cada 10 segundos
+      heartbeatInterval = setInterval(() => {
+        if (token && username) {
+          setUserOnline();
+        }
+      }, 10000);
+    }
+
+    // Para o heartbeat
+    function stopHeartbeat() {
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+      }
+    }
+
+    // Notifica presença offline quando usuario sai/fecha aba
+    function setUserOffline() {
+      if (!token || !username) return;
+      
+      stopHeartbeat();
+      
+      console.log('Enviando status OFFLINE para:', username);
+      
+      // Usa fetch com keepalive para garantir envio mesmo ao fechar
+      fetch('http://localhost:3003/api/v1/presence', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        },
+        body: JSON.stringify({ is_online: false }),
+        keepalive: true
+      })
+        .then(() => console.log('Status OFFLINE enviado com sucesso'))
+        .catch(err => console.error('Erro ao enviar OFFLINE:', err));
+      
+      // Backup: também tenta uma segunda chamada com beacon se disponível
+      try {
+        const form = new FormData();
+        form.append('token', token);
+        form.append('is_online', 'false');
+        navigator.sendBeacon('http://localhost:3003/api/v1/presence-beacon', form);
+      } catch (e) {
+        console.log('sendBeacon não disponível');
+      }
+    }
+
+    // Listener para quando o usuário fecha/abandona a aba/janela
+    window.addEventListener('beforeunload', setUserOffline);
+    window.addEventListener('unload', setUserOffline);
 
     function login() {
       username = document.getElementById('username').value.trim();
@@ -327,11 +418,26 @@
           document.getElementById('login-area').style.display = 'none';
           document.getElementById('conversation-area').style.display = '';
           document.getElementById('register-area').style.display = 'none';
-          document.getElementById('app-title').innerText = username;
+          document.getElementById('app-title').innerText = `🎯 ${username}`;
           const tokenBox = document.getElementById('token-box');
           tokenBox.innerHTML = `<b>Token JWT:</b><br><span>${token}</span>`;
           tokenBox.style.display = 'block';
+          
+          // Marcar usuário como ONLINE e iniciar heartbeat
+          startHeartbeat();
+          
+          // Carregar conversas e usuários disponíveis
           loadConversations();
+          loadOnlineUsers();
+          
+          // Carregar mensagens pendentes
+          loadPendingMessages();
+          
+          // Atualizar lista de usuários a cada 5 segundos
+          clearInterval(presenceInterval);
+          presenceInterval = setInterval(() => {
+            loadOnlineUsers();
+          }, 5000);
         });
     }
 
@@ -368,6 +474,9 @@
         .then(data => {
           if (!data) return;
           document.getElementById('register-status').innerText = 'Cadastro realizado! Faça login.';
+          // Limpar campos
+          document.getElementById('reg-username').value = '';
+          document.getElementById('reg-password').value = '';
         });
     }
 
@@ -384,11 +493,132 @@
           ul.innerHTML = '';
           (data.conversations || []).forEach(conv => {
             const li = document.createElement('li');
-            li.innerHTML = `<b>${conv.type === 'group' ? 'Grupo' : 'Privada'}</b> - ID: ${conv.id}`;
+            li.innerHTML = `<b>${conv.type === 'group' ? '👥 Grupo' : '💬 Privada'}</b> - ID: ${conv.id}`;
             li.style.cursor = 'pointer';
+            li.style.padding = '10px';
+            li.style.margin = '8px 0';
+            li.style.background = '#e8f4f8';
+            li.style.borderRadius = '6px';
+            li.style.transition = '0.2s';
+            li.onmouseover = () => li.style.background = '#d0e8f2';
+            li.onmouseout = () => li.style.background = '#e8f4f8';
             li.onclick = () => selectConversation(conv.id);
             ul.appendChild(li);
           });
+        })
+        .catch(err => console.error('Erro ao carregar conversas:', err));
+    }
+
+    function loadOnlineUsers() {
+      if (!token) {
+        console.error('Token não disponível');
+        const ul = document.getElementById('online-users-list');
+        ul.innerHTML = '<li style="color: red;">❌ Faça login primeiro</li>';
+        return;
+      }
+
+      console.log('Carregando usuários online...');
+      fetch(`http://localhost:3003/api/v1/users`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        }
+      })
+        .then(res => {
+          console.log('Response status:', res.status);
+          if (!res.ok) {
+            return res.json().then(err => {
+              throw new Error(`HTTP ${res.status}: ${err.error || res.statusText}`);
+            });
+          }
+          return res.json();
+        })
+        .then(data => {
+          console.log('Dados recebidos:', data);
+          const ul = document.getElementById('online-users-list');
+          ul.innerHTML = '';
+          const users = data.users || [];
+          
+          console.log('Total de usuários:', users.length);
+          
+          if (users.length === 0) {
+            ul.innerHTML = '<li style="color: #999;">Nenhum usuário disponível</li>';
+            return;
+          }
+          
+          users.forEach(user => {
+            if (user.username === username) {
+              console.log('Pulando usuário atual:', user.username);
+              return; // Não mostra a si mesmo
+            }
+            
+            const status = user.is_online ? '🟢' : '🔴';
+            const statusText = user.is_online ? 'Online' : 'Offline';
+            
+            const li = document.createElement('li');
+            li.innerHTML = `${status} ${user.username}`;
+            li.style.cursor = 'pointer';
+            li.style.padding = '10px';
+            li.style.margin = '8px 0';
+            li.style.background = user.is_online ? '#d4edda' : '#f8d7da';
+            li.style.borderRadius = '6px';
+            li.style.transition = '0.2s';
+            li.onmouseover = () => li.style.background = user.is_online ? '#c3e6cb' : '#f5c6cb';
+            li.onmouseout = () => li.style.background = user.is_online ? '#d4edda' : '#f8d7da';
+            li.style.opacity = user.is_online ? '1' : '0.7';
+            
+            // Permite clicar mesmo que esteja offline - as mensagens serão salvas como pendentes
+            li.onclick = () => startPrivateChat(user.username);
+            
+            const tooltip = document.createElement('small');
+            tooltip.style.display = 'block';
+            tooltip.style.fontSize = '12px';
+            tooltip.style.color = '#666';
+            tooltip.style.marginTop = '3px';
+            tooltip.innerText = user.is_online ? 'Clique para iniciar conversa' : 'Clique para enviar mensagem (será entregue ao fazer login)';
+            li.appendChild(tooltip);
+            
+            ul.appendChild(li);
+          });
+          
+          console.log('Usuários carregados com sucesso');
+        })
+        .catch(err => {
+          console.error('Erro ao carregar usuários:', err);
+          const ul = document.getElementById('online-users-list');
+          ul.innerHTML = `<li style="color: red;">❌ ${err.message}</li>`;
+        });
+    }
+
+    function startPrivateChat(otherUser) {
+      const participants = [username, otherUser];
+      fetch('http://localhost:3003/api/v1/conversations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        },
+        body: JSON.stringify({ participants, type: 'private' })
+      })
+        .then(res => res.json())
+        .then(data => {
+          conversationId = data.conversationId;
+          document.getElementById('conv-id').innerText = conversationId;
+          document.getElementById('conversation-area').style.display = 'none';
+          document.getElementById('chat-area').style.display = 'flex';
+          connectWS();
+          loadMessages();
+          loadParticipants();
+          // Mostra mensagem informando se o usuário está offline
+          const onlineStatus = document.querySelector(`[data-user="${otherUser}"]`);
+          if (onlineStatus && !onlineStatus.textContent.includes('🟢')) {
+            addSystemMsg(`⚠️ ${otherUser} está offline. Suas mensagens serão entregues quando fizer login.`);
+          }
+        })
+        .catch(err => {
+          console.error('Erro ao criar conversa:', err);
+          alert('Erro ao abrir conversa: ' + err.message);
         });
     }
 
@@ -404,9 +634,100 @@
 
     // Função para voltar para a lista de conversas
     function voltarParaConversas() {
+      // Fecha WebSocket
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+      
+      conversationId = null;
+      document.getElementById('messages').innerHTML = '';
+      document.getElementById('participants-list').innerHTML = '';
+      document.getElementById('msg').value = '';
+      
       document.getElementById('chat-area').style.display = 'none';
       document.getElementById('conversation-area').style.display = '';
+      
       loadConversations();
+      loadOnlineUsers();
+    }
+
+    // Carrega mensagens pendentes que chegaram enquanto estava offline
+    function loadPendingMessages() {
+      if (!token) return;
+      
+      fetch('http://localhost:3003/api/v1/pending-messages', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        }
+      })
+        .then(res => res.json())
+        .then(data => {
+          const pendingMessages = data.pendingMessages || [];
+          
+          if (pendingMessages.length === 0) {
+            console.log('Nenhuma mensagem pendente');
+            return;
+          }
+          
+          console.log(`${pendingMessages.length} mensagens pendentes recebidas`);
+          
+          // Agrupa mensagens por conversation_id
+          const messagesByConv = {};
+          pendingMessages.forEach(msg => {
+            if (!messagesByConv[msg.conversation_id]) {
+              messagesByConv[msg.conversation_id] = [];
+            }
+            messagesByConv[msg.conversation_id].push(msg);
+          });
+          
+          // Mostra notificação
+          let notificationText = `📬 Você tem ${pendingMessages.length} mensagem(ns) pendente(s):\n\n`;
+          Object.keys(messagesByConv).forEach(convId => {
+            const msgs = messagesByConv[convId];
+            const senders = [...new Set(msgs.map(m => m.sender_username))].join(', ');
+            notificationText += `• Conversa ${convId}: ${msgs.length} msg(ns) de ${senders}\n`;
+          });
+          
+          alert(notificationText);
+          
+          // Recarrega as conversas para atualizar as mensagens
+          loadConversations();
+        })
+        .catch(err => console.error('Erro ao carregar mensagens pendentes:', err));
+    }
+
+    // Função para fazer logout (sair da aplicação)
+    function logout() {
+      // Marcar como offline
+      setUserOffline();
+      
+      // Limpar dados
+      clearInterval(presenceInterval);
+      stopHeartbeat();
+      token = null;
+      username = null;
+      conversationId = null;
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+      
+      // Limpar interface
+      document.getElementById('login-area').style.display = '';
+      document.getElementById('conversation-area').style.display = 'none';
+      document.getElementById('chat-area').style.display = 'none';
+      document.getElementById('register-area').style.display = 'none';
+      document.getElementById('app-title').innerText = '🎯 Chat';
+      document.getElementById('login-status').innerText = '';
+      document.getElementById('login-username').value = '';
+      document.getElementById('login-password').value = '';
+      document.getElementById('token-box').style.display = 'none';
+      document.getElementById('token-box').innerHTML = '';
+      
+      alert('Logout realizado! Você foi marcado como offline.');
     }
 
     function createConversation() {
@@ -526,28 +847,7 @@
     }
   </script>
 
-  <!-- Botão para voltar para conversas -->
-  <button id="voltar-btn" style="display:none; margin-top:10px;" onclick="voltarParaConversas()">Voltar para
-    conversas</button>
-  <script>
-    // Exibe/esconde botão de voltar conforme área visível
-    function toggleVoltarBtn() {
-      document.getElementById('voltar-btn').style.display = document.getElementById('chat-area').style.display === 'flex' ? '' : 'none';
-    }
-    // Hook para mostrar/esconder botão ao alternar áreas
-    const oldSelectConversation = selectConversation;
-    selectConversation = function (id) {
-      oldSelectConversation(id);
-      toggleVoltarBtn();
-    };
-    const oldVoltar = voltarParaConversas;
-    voltarParaConversas = function () {
-      oldVoltar();
-      toggleVoltarBtn();
-    };
-    // Inicializa botão correto ao carregar
-    window.onload = toggleVoltarBtn;
-  </script>
+
 
 </body>
 

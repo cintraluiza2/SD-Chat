@@ -139,9 +139,9 @@ router.post('/v1/conversations', authMiddleware, async (req, res) => {
 // POST /v1/messages – envia mensagem de texto
 router.post('/v1/messages', authMiddleware, async (req, res) => {
   const { conversationId, content, type, file_id } = req.body;
+  const senderUsername = req.user.username;
 
-
-    if (!conversationId) {
+  if (!conversationId) {
     return res.status(400).json({ error: "conversationId is required" });
   }
 
@@ -155,7 +155,7 @@ router.post('/v1/messages', authMiddleware, async (req, res) => {
 
   const msg = {
     conversation_id: conversationId,
-    sender_username: req.user.username,
+    sender_username: senderUsername,
     content,
     type: type || 'text',
     status: 'SENT',
@@ -169,9 +169,40 @@ router.post('/v1/messages', authMiddleware, async (req, res) => {
     msg.content = content;
   }
 
-
   try {
+    // Primeiro, salva a mensagem no Kafka para ser persistida
     await sendMessageToKafka(msg);
+    
+    // Depois, obtém todos os participantes da conversa
+    const participantsResult = await db.query(
+      'SELECT username FROM conversation_participants WHERE conversation_id = $1',
+      [conversationId]
+    );
+    
+    const participants = participantsResult.rows.map(r => r.username);
+    
+    // Para cada participante que não é o remetente, verifica se está offline
+    for (const participant of participants) {
+      if (participant === senderUsername) continue; // não salva para si mesmo
+      
+      const presenceResult = await db.query(
+        'SELECT is_online FROM user_presence WHERE username = $1',
+        [participant]
+      );
+      
+      const isOnline = presenceResult.rows.length > 0 && presenceResult.rows[0].is_online;
+      
+      // Se está offline, salva como mensagem pendente
+      if (!isOnline) {
+        await db.query(
+          `INSERT INTO pending_messages (recipient_username, sender_username, conversation_id, content, delivered)
+           VALUES ($1, $2, $3, $4, false)`,
+          [participant, senderUsername, conversationId, content]
+        );
+        console.log(`Mensagem salva como pendente para ${participant}`);
+      }
+    }
+    
     // a persistência e mudança de status será responsabilidade do worker
     return res.status(202).json({ status: 'queued', message: msg });
   } catch (err) {
@@ -200,6 +231,40 @@ router.get('/v1/conversations/:id/messages', authMiddleware, async (req, res) =>
   }
 });
 
+// GET /v1/pending-messages – recupera mensagens pendentes do usuário logado
+router.get('/v1/pending-messages', authMiddleware, async (req, res) => {
+  const username = req.user.username;
+  
+  try {
+    // Busca todas as mensagens pendentes não entregues
+    const result = await db.query(
+      `SELECT id, sender_username, conversation_id, content, created_at
+       FROM pending_messages
+       WHERE recipient_username = $1 AND delivered = false
+       ORDER BY created_at ASC`,
+      [username]
+    );
+    
+    const pendingMessages = result.rows;
+    
+    // Marca todas como entregues
+    if (pendingMessages.length > 0) {
+      await db.query(
+        `UPDATE pending_messages
+         SET delivered = true
+         WHERE recipient_username = $1 AND delivered = false`,
+        [username]
+      );
+      console.log(`${pendingMessages.length} mensagens pendentes entregues para ${username}`);
+    }
+    
+    return res.json({ pendingMessages });
+  } catch (err) {
+    console.error('Error fetching pending messages', err);
+    return res.status(500).json({ error: 'Failed to fetch pending messages' });
+  }
+});
+
 router.post("/v1/events/message-delivered", (req, res) => {
   const msg = req.body;
 
@@ -211,5 +276,106 @@ router.post("/v1/events/message-delivered", (req, res) => {
   return res.json({ ok: true });
 });
 
+// GET /api/v1/users – lista todos os usuários registrados com status de presença
+router.get('/v1/users', authMiddleware, async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT u.username, COALESCE(up.is_online, false) as is_online
+      FROM users u
+      LEFT JOIN user_presence up ON u.username = up.username
+      ORDER BY u.username ASC
+    `);
+    return res.json({ users: result.rows });
+  } catch (err) {
+    console.error('Error fetching users', err);
+    return res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+// POST /api/v1/presence – atualiza status de presença do usuário
+router.post('/v1/presence', authMiddleware, async (req, res) => {
+  const { is_online } = req.body;
+  const userUsername = req.user.username;
+  
+  try {
+    // Verifica se já existe registro
+    const exists = await db.query(
+      'SELECT username FROM user_presence WHERE username = $1',
+      [userUsername]
+    );
+    
+    if (exists.rows.length > 0) {
+      // Atualiza registro existente
+      await db.query(
+        'UPDATE user_presence SET is_online = $1, updated_at = NOW() WHERE username = $2',
+        [is_online, userUsername]
+      );
+    } else {
+      // Insere novo registro
+      await db.query(
+        'INSERT INTO user_presence (username, is_online, updated_at) VALUES ($1, $2, NOW())',
+        [userUsername, is_online]
+      );
+    }
+    
+    console.log(`Presença atualizada: ${userUsername} -> ${is_online ? 'ONLINE' : 'OFFLINE'}`);
+    return res.json({ ok: true, status: is_online ? 'online' : 'offline' });
+  } catch (err) {
+    console.error('Error updating presence', err);
+    return res.status(500).json({ error: 'Failed to update presence' });
+  }
+});
+
+// POST /api/v1/presence-beacon – endpoint alternativo para navigator.sendBeacon (sem auth headers)
+router.post('/v1/presence-beacon', async (req, res) => {
+  try {
+    const token = req.body.token || req.headers['authorization']?.replace('Bearer ', '');
+    const is_online = req.body.is_online === 'true' || req.body.is_online === true;
+    
+    if (!token) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
+    
+    // Decodifica o token sem verificar (apenas para pegar o username durante logout)
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      return res.status(400).json({ error: 'Invalid token format' });
+    }
+    
+    try {
+      const decoded = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+      const userUsername = decoded.username;
+      
+      // Verifica se já existe registro
+      const exists = await db.query(
+        'SELECT username FROM user_presence WHERE username = $1',
+        [userUsername]
+      );
+      
+      if (exists.rows.length > 0) {
+        // Atualiza registro existente
+        await db.query(
+          'UPDATE user_presence SET is_online = $1, updated_at = NOW() WHERE username = $2',
+          [is_online, userUsername]
+        );
+      } else {
+        // Insere novo registro
+        await db.query(
+          'INSERT INTO user_presence (username, is_online, updated_at) VALUES ($1, $2, NOW())',
+          [userUsername, is_online]
+        );
+      }
+      
+      console.log(`Presença atualizada (beacon): ${userUsername} -> ${is_online ? 'ONLINE' : 'OFFLINE'}`);
+      return res.json({ ok: true, status: is_online ? 'online' : 'offline' });
+    } catch (err) {
+      console.error('Error decoding token:', err);
+      return res.status(400).json({ error: 'Invalid token' });
+    }
+  } catch (err) {
+    console.error('Error in beacon presence', err);
+    return res.status(500).json({ error: 'Failed to update presence' });
+  }
+});
 
 module.exports = router;

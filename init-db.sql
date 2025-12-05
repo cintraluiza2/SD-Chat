@@ -55,6 +55,28 @@ EXECUTE FUNCTION update_updated_at_column();
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_messages_status ON messages(status);
 
--- Uma conversa “default” pra facilitar testes
+-- Tabela de presença (status online/offline)
+CREATE TABLE IF NOT EXISTS user_presence (
+  username VARCHAR(50) PRIMARY KEY REFERENCES users(username) ON DELETE CASCADE,
+  is_online BOOLEAN NOT NULL DEFAULT false,
+  last_seen TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Tabela para armazenar mensagens pendentes de usuários offline
+CREATE TABLE IF NOT EXISTS pending_messages (
+  id SERIAL PRIMARY KEY,
+  recipient_username VARCHAR(50) NOT NULL REFERENCES users(username) ON DELETE CASCADE,
+  sender_username VARCHAR(50) NOT NULL,
+  conversation_id INT NOT NULL REFERENCES conversations(id),
+  content TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  delivered BOOLEAN NOT NULL DEFAULT false
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_messages_recipient ON pending_messages(recipient_username, delivered);
+CREATE INDEX IF NOT EXISTS idx_pending_messages_created ON pending_messages(created_at);
+
+-- Uma conversa "default" pra facilitar testes
 INSERT INTO conversations (name) VALUES ('demo-conversation')
 ON CONFLICT DO NOTHING;
