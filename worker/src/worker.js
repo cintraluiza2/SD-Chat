@@ -42,9 +42,7 @@ async function startWorker() {
         body: JSON.stringify(msg)
       });
 
-      const endTimer = messageLatency.startTimer();
-      messagesProcessed.inc();
-      endTimer();
+      // Removido o uso de messageLatency e messagesProcessed para evitar crash
 
 
     },
