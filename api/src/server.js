@@ -5,15 +5,15 @@ const http = require("http");
 const router = require('./routes');
 const { initKafka } = require('./kafka');
 const { startWebSocketServer } = require("./websocket");
+const uploadRoutes = require("./routes-upload");
 
-const cors = require('cors');
 const app = express();
 const server = http.createServer(app);  
 const port = process.env.PORT || 3000;
 
-app.use(cors());
 app.use(bodyParser.json());
 app.use('/api', router);
+app.use("/api", uploadRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });

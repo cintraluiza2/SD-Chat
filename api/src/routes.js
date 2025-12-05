@@ -138,9 +138,19 @@ router.post('/v1/conversations', authMiddleware, async (req, res) => {
 
 // POST /v1/messages – envia mensagem de texto
 router.post('/v1/messages', authMiddleware, async (req, res) => {
-  const { conversationId, content, type } = req.body;
-  if (!conversationId || !content) {
-    return res.status(400).json({ error: 'conversationId and content are required' });
+  const { conversationId, content, type, file_id } = req.body;
+
+
+    if (!conversationId) {
+    return res.status(400).json({ error: "conversationId is required" });
+  }
+
+  if ((type === "text" || !type) && !content) {
+    return res.status(400).json({ error: "content is required for text messages" });
+  }
+
+  if (type === "file" && !file_id) {
+    return res.status(400).json({ error: "file_id is required for file messages" });
   }
 
   const msg = {
@@ -151,6 +161,14 @@ router.post('/v1/messages', authMiddleware, async (req, res) => {
     status: 'SENT',
     timestamp: new Date().toISOString(),
   };
+
+  if (msg.type === "file") {
+    msg.file_id = file_id;
+    msg.content = null;
+  } else {
+    msg.content = content;
+  }
+
 
   try {
     await sendMessageToKafka(msg);
