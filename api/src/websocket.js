@@ -41,16 +41,42 @@ function startWebSocketServer(server) {
   });
 
   //  Aqui processamos eventos vindos do Worker/Kafka
-  kafkaEmitter.on("message_delivered", (msg) => {
-    const ws = connectedUsers[msg.sender_username];
-
-    if (ws && ws.readyState === ws.OPEN) {
-      ws.send(
+  const db = require("./db");
+  kafkaEmitter.on("message_delivered", async (msg) => {
+    // Envia status para o remetente
+    const wsSender = connectedUsers[msg.sender_username];
+    if (wsSender && wsSender.readyState === wsSender.OPEN) {
+      wsSender.send(
         JSON.stringify({
           type: "message_status",
           message: msg,
         })
       );
+    }
+
+    // Busca participantes da conversa
+    try {
+      const result = await db.query(
+        "SELECT username FROM conversation_participants WHERE conversation_id = $1",
+        [msg.conversation_id]
+      );
+      for (const row of result.rows) {
+        const username = row.username;
+        // Não envia para o remetente
+        if (username !== msg.sender_username) {
+          const wsRecipient = connectedUsers[username];
+          if (wsRecipient && wsRecipient.readyState === wsRecipient.OPEN) {
+            wsRecipient.send(
+              JSON.stringify({
+                type: "new_message",
+                message: msg,
+              })
+            );
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Erro ao buscar participantes da conversa:", err);
     }
   });
 }

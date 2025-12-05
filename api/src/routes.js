@@ -5,6 +5,34 @@ const { generateToken, authMiddleware } = require('./auth');
 
 const router = express.Router();
 
+// POST /v1/conversations – cria uma nova conversa (privada ou grupo)
+router.post('/v1/conversations', authMiddleware, async (req, res) => {
+  const { participants, type } = req.body;
+  if (!participants || !Array.isArray(participants) || participants.length < 2) {
+    return res.status(400).json({ error: 'participants (min. 2) required' });
+  }
+  const convType = type === 'group' ? 'group' : 'private';
+  try {
+    // Cria conversa
+    const result = await db.query(
+      'INSERT INTO conversations (type) VALUES ($1) RETURNING id',
+      [convType]
+    );
+    const conversationId = result.rows[0].id;
+    // Associa participantes
+    for (const username of participants) {
+      await db.query(
+        'INSERT INTO conversation_participants (conversation_id, username) VALUES ($1, $2)',
+        [conversationId, username]
+      );
+    }
+    return res.status(201).json({ conversationId });
+  } catch (err) {
+    console.error('Error creating conversation', err);
+    return res.status(500).json({ error: 'Failed to create conversation' });
+  }
+});
+
 // LOGIN SIMPLES (sem senha, apenas para gerar JWT para testes)
 router.post('/v1/auth/login', async (req, res) => {
   const { username } = req.body;
