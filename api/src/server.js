@@ -6,10 +6,12 @@ const router = require('./routes');
 const { initKafka } = require('./kafka');
 const { startWebSocketServer } = require("./websocket");
 
+const cors = require('cors');
 const app = express();
 const server = http.createServer(app);  
 const port = process.env.PORT || 3000;
 
+app.use(cors());
 app.use(bodyParser.json());
 app.use('/api', router);
 

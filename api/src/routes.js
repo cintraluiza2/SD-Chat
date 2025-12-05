@@ -2,8 +2,91 @@ const express = require('express');
 const db = require('./db');
 const { sendMessageToKafka } = require('./kafka');
 const { generateToken, authMiddleware } = require('./auth');
+const { hashPassword, comparePassword } = require('./password');
 
 const router = express.Router();
+// Cadastro de usuário (register)
+router.post('/v1/auth/register', async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'username and password are required' });
+  }
+  try {
+    // Garante username único
+    const userExists = await db.query('SELECT id FROM users WHERE username = $1', [username]);
+    if (userExists.rows.length > 0) {
+      return res.status(409).json({ error: 'username already exists' });
+    }
+    const password_hash = await hashPassword(password);
+    const result = await db.query(
+      'INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING id, username',
+      [username, password_hash]
+    );
+    return res.status(201).json({ id: result.rows[0].id, username });
+  } catch (err) {
+    console.error('Error in register', err);
+    return res.status(500).json({ error: 'Failed to register' });
+  }
+});
+
+// Login seguro (username + senha)
+router.post('/v1/auth/login', async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'username and password are required' });
+  }
+  try {
+    const user = await db.query('SELECT id, username, password_hash FROM users WHERE username = $1', [username]);
+    if (user.rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    const valid = await comparePassword(password, user.rows[0].password_hash);
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    // Gera JWT com user_id e username
+    const token = generateToken({ user_id: user.rows[0].id, username: user.rows[0].username });
+    return res.json({ token });
+  } catch (err) {
+    console.error('Error in login', err);
+    return res.status(500).json({ error: 'Failed to login' });
+  }
+});
+
+
+// GET /api/v1/conversations/:id/participants – lista participantes da conversa
+router.get('/v1/conversations/:id/participants', authMiddleware, async (req, res) => {
+  const conversationId = req.params.id;
+  try {
+    const result = await db.query(
+      'SELECT username FROM conversation_participants WHERE conversation_id = $1',
+      [conversationId]
+    );
+    return res.json({ participants: result.rows.map(r => r.username) });
+  } catch (err) {
+    console.error('Error fetching participants', err);
+    return res.status(500).json({ error: 'Failed to fetch participants' });
+  }
+});
+
+// GET /api/v1/users/:username/conversations – lista todas as conversas do usuário
+router.get('/v1/users/:username/conversations', authMiddleware, async (req, res) => {
+  const username = req.params.username;
+  try {
+    const result = await db.query(
+      `SELECT c.id, c.name, c.type, c.created_at
+         FROM conversations c
+         JOIN conversation_participants cp ON cp.conversation_id = c.id
+         WHERE cp.username = $1
+         ORDER BY c.created_at DESC`,
+      [username]
+    );
+    return res.json({ conversations: result.rows });
+  } catch (err) {
+    console.error('Error fetching user conversations', err);
+    return res.status(500).json({ error: 'Failed to fetch conversations' });
+  }
+});
 
 // POST /v1/conversations – cria uma nova conversa (privada ou grupo)
 router.post('/v1/conversations', authMiddleware, async (req, res) => {
@@ -13,7 +96,24 @@ router.post('/v1/conversations', authMiddleware, async (req, res) => {
   }
   const convType = type === 'group' ? 'group' : 'private';
   try {
-    // Cria conversa
+    // Regra: evitar conversa privada duplicada
+    if (convType === 'private' && participants.length === 2) {
+      // Busca conversa privada existente entre os dois usuários
+      const check = await db.query(
+        `SELECT c.id FROM conversations c
+          JOIN conversation_participants cp1 ON cp1.conversation_id = c.id AND cp1.username = $1
+          JOIN conversation_participants cp2 ON cp2.conversation_id = c.id AND cp2.username = $2
+         WHERE c.type = 'private'
+         GROUP BY c.id
+         HAVING COUNT(*) = 2`,
+        [participants[0], participants[1]]
+      );
+      if (check.rows.length > 0) {
+        // Já existe, retorna o id existente
+        return res.status(200).json({ conversationId: check.rows[0].id });
+      }
+    }
+    // Cria conversa normalmente
     const result = await db.query(
       'INSERT INTO conversations (type) VALUES ($1) RETURNING id',
       [convType]
@@ -34,25 +134,7 @@ router.post('/v1/conversations', authMiddleware, async (req, res) => {
 });
 
 // LOGIN SIMPLES (sem senha, apenas para gerar JWT para testes)
-router.post('/v1/auth/login', async (req, res) => {
-  const { username } = req.body;
-  if (!username) {
-    return res.status(400).json({ error: 'username is required' });
-  }
 
-  // registra usuário na tabela se ainda não existir
-  try {
-    await db.query(
-      'INSERT INTO users (username) VALUES ($1) ON CONFLICT (username) DO NOTHING',
-      [username]
-    );
-  } catch (err) {
-    console.error('Error inserting user', err);
-  }
-
-  const token = generateToken(username);
-  res.json({ token });
-});
 
 // POST /v1/messages – envia mensagem de texto
 router.post('/v1/messages', authMiddleware, async (req, res) => {

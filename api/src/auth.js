@@ -2,9 +2,13 @@ const jwt = require("jsonwebtoken");
 
 const SECRET = process.env.JWT_SECRET || "supersecret";
 
-// Gera um token para login
-function generateToken(username) {
-  return jwt.sign({ sub: username }, SECRET, { expiresIn: "1d" });
+// Gera um token para login (aceita string ou objeto)
+function generateToken(payload) {
+  if (typeof payload === 'string') {
+    return jwt.sign({ sub: payload }, SECRET, { expiresIn: "1d" });
+  }
+  // payload: { user_id, username }
+  return jwt.sign({ sub: payload.username, user_id: payload.user_id }, SECRET, { expiresIn: "1d" });
 }
 
 // Valida e decodifica token
@@ -23,7 +27,7 @@ function authMiddleware(req, res, next) {
 
   try {
     const payload = verifyToken(token);
-    req.user = { username: payload.sub };
+    req.user = { username: payload.sub, user_id: payload.user_id };
     next();
   } catch (err) {
     return res.status(401).json({ error: "Invalid token" });
