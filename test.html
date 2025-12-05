@@ -1,32 +1,554 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-br">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Teste WebSocket Chat-API</title>
+  <style>
+    /* ======== RESET SUAVE ======== */
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: "Segoe UI", Arial, sans-serif;
+      margin: 0;
+      background: #eef1f5;
+      color: #333;
+    }
+
+    /* ======== TÍTULO ======== */
+    #app-title {
+      text-align: center;
+      margin: 20px 0 10px;
+      font-size: 32px;
+      font-weight: 700;
+      color: #2c3e50;
+    }
+
+    /* ======== SEÇÃO DE LOGIN / CADASTRO ======== */
+    #login-area,
+    #register-area {
+      background: white;
+      max-width: 400px;
+      margin: 20px auto;
+      padding: 20px 25px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    input {
+      width: 100%;
+      padding: 10px;
+      margin: 8px 0 15px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      transition: 0.2s;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #4a90e2;
+      box-shadow: 0 0 4px rgba(74, 144, 226, 0.4);
+    }
+
+    button {
+      padding: 10px 18px;
+      border: none;
+      background: #4a90e2;
+      color: white;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: 0.2s;
+      font-weight: 600;
+    }
+
+    button:hover {
+      background: #337acc;
+    }
+
+    /* ======== TOKEN BOX ======== */
+    #token-box {
+      max-width: 900px;
+      margin: 10px auto;
+      background: #dceefd;
+      border: 1px solid #9ec7f3;
+      color: #1a3b5d;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      word-break: break-all;
+    }
+
+    /* ======== LISTA DE CONVERSAS ======== */
+    #conversation-area {
+      max-width: 900px;
+      margin: 0 auto;
+      background: white;
+      padding: 20px 25px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    #conversations-list li {
+      padding: 8px 12px;
+      margin-bottom: 6px;
+      background: #f6f7f9;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+
+    #conversations-list li:hover {
+      background: #e9eef6;
+    }
+
+    /* ======== ÁREA DO CHAT ======== */
+    #chat-area {
+      display: none;
+      flex-direction: row;
+      gap: 30px;
+      align-items: flex-start;
+      width: 100%;
+      max-width: 1000px;
+      margin: 25px auto;
+    }
+
+    /* Painel principal */
+    .chat-panel {
+      flex: 3;
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    /* Lista de mensagens */
+    #chat {
+      border: none;
+      height: 350px;
+      overflow-y: auto;
+      margin-bottom: 15px;
+      background: #f9f9fb;
+      border-radius: 12px;
+      padding: 15px;
+    }
+
+    #messages {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    /* ======== BALÕES DE MENSAGEM ======== */
+    #messages li {
+      margin-bottom: 12px;
+      padding: 8px 12px;
+      display: inline-block;
+      max-width: 80%;
+      border-radius: 12px;
+      line-height: 1.4em;
+    }
+
+    /* Minhas mensagens */
+    .me {
+      background: #d1e7ff;
+      color: #0e3a5f;
+      font-weight: 600;
+      align-self: flex-end;
+    }
+
+    /* Mensagem de outros */
+    .other {
+      background: #e2f5e8;
+      color: #225b32;
+      border: 1px solid #c5e8d0;
+    }
+
+    /* Mensagens do sistema */
+    .system {
+      background: #f0f0f0;
+      color: #777;
+      font-style: italic;
+    }
+
+    /* Input do chat */
+    #msg {
+      width: 78%;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+    }
+
+    .chat-panel button {
+      width: 20%;
+    }
+
+    /* ======== PARTICIPANTES ======== */
+    .participants-panel {
+      flex: 1;
+      background: white !important;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      padding: 20px;
+      height: 400px;
+      overflow-y: auto;
+    }
+
+    /* ======== BOTÃO VOLTAR ======== */
+    #voltar-btn {
+      display: none;
+      background: #777;
+      margin: 10px auto;
+      display: block;
+    }
+
+    #voltar-btn:hover {
+      background: #555;
+    }
+
+    /* ======== SCROLLBAR BONITA ======== */
+    #chat::-webkit-scrollbar,
+    .participants-panel::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    #chat::-webkit-scrollbar-thumb,
+    .participants-panel::-webkit-scrollbar-thumb {
+      background: #c7c7c7;
+      border-radius: 6px;
+    }
+
+    /* ======== RESPONSIVO ======== */
+    @media (max-width: 800px) {
+      #chat-area {
+        flex-direction: column;
+      }
+
+      .participants-panel {
+        width: 100%;
+        height: auto;
+      }
+
+      #msg {
+        width: 100%;
+        margin-bottom: 10px;
+      }
+
+      .chat-panel button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+
 <body>
-  <h2>Teste WebSocket do chat-api</h2>
-  <pre id="log"></pre>
+  <h2 id="app-title">SD-Chat</h2>
+
+
+  <div id="login-area">
+    <h3>Login</h3>
+    <input id="username" placeholder="Nome de usuário" />
+    <input id="password" type="password" placeholder="Senha" />
+    <button onclick="login()">Entrar</button>
+    <button onclick="showRegister()">Cadastrar</button>
+    <div id="login-status"></div>
+  </div>
+  <div id="register-area" style="display:none;">
+    <h3>Cadastro</h3>
+    <input id="reg-username" placeholder="Nome de usuário" />
+    <input id="reg-password" type="password" placeholder="Senha" />
+    <button onclick="register()">Cadastrar</button>
+    <button onclick="showLogin()">Voltar</button>
+    <div id="register-status"></div>
+  </div>
+  <div id="token-box"></div>
+
+  <div id="conversation-area" style="display:none;">
+    <h3>Criar conversa</h3>
+    <input id="participants" placeholder="Participantes (separados por vírgula)" />
+    <select id="conv-type">
+      <option value="private">Privada</option>
+      <option value="group">Grupo</option>
+    </select>
+    <button onclick="createConversation()">Criar</button>
+    <div id="conv-status"></div>
+    <hr>
+    <h3>Minhas conversas</h3>
+    <ul id="conversations-list"></ul>
+  </div>
+
+  <div id="chat-area">
+    <div class="chat-panel">
+      <h3>Chat</h3>
+      <div>Conversa ID: <span id="conv-id"></span></div>
+      <div id="chat">
+        <ul id="messages"></ul>
+      </div>
+      <input id="msg" placeholder="Digite sua mensagem" />
+      <button onclick="sendMessage()">Enviar</button>
+    </div>
+    <div class="participants-panel">
+      <h4>Participantes</h4>
+      <ul id="participants-list"></ul>
+    </div>
+  </div>
 
   <script>
-    const log = (msg) => {
-      document.getElementById("log").textContent += msg + "\n";
-    };
+    let token = null;
+    let username = null;
+    let conversationId = null;
+    let ws = null;
 
-    // Conecta no WebSocket do container
-    const socket = io("http://localhost:3003");
+    function login() {
+      username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      if (!username || !password) {
+        document.getElementById('login-status').innerText = 'Preencha usuário e senha.';
+        return;
+      }
+      fetch('http://localhost:3003/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      })
+        .then(async res => {
+          if (!res.ok) {
+            const err = await res.json();
+            document.getElementById('login-status').innerText = err.error || 'Erro ao autenticar';
+            return null;
+          }
+          return res.json();
+        })
+        .then(data => {
+          if (!data) return;
+          token = data.token;
+          document.getElementById('login-status').innerText = 'Autenticado!';
+          document.getElementById('login-area').style.display = 'none';
+          document.getElementById('conversation-area').style.display = '';
+          document.getElementById('register-area').style.display = 'none';
+          document.getElementById('app-title').innerText = username;
+          const tokenBox = document.getElementById('token-box');
+          tokenBox.innerHTML = `<b>Token JWT:</b><br><span>${token}</span>`;
+          tokenBox.style.display = 'block';
+          loadConversations();
+        });
+    }
 
-    socket.on("connect", () => {
-      log("🔌 Conectado ao WebSocket");
-    });
+    function showRegister() {
+      document.getElementById('login-area').style.display = 'none';
+      document.getElementById('register-area').style.display = '';
+      document.getElementById('register-status').innerText = '';
+    }
+    function showLogin() {
+      document.getElementById('register-area').style.display = 'none';
+      document.getElementById('login-area').style.display = '';
+      document.getElementById('login-status').innerText = '';
+    }
+    function register() {
+      const username = document.getElementById('reg-username').value.trim();
+      const password = document.getElementById('reg-password').value;
+      if (!username || !password) {
+        document.getElementById('register-status').innerText = 'Preencha usuário e senha.';
+        return;
+      }
+      fetch('http://localhost:3003/api/v1/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      })
+        .then(async res => {
+          if (!res.ok) {
+            const err = await res.json();
+            document.getElementById('register-status').innerText = err.error || 'Erro ao cadastrar';
+            return null;
+          }
+          return res.json();
+        })
+        .then(data => {
+          if (!data) return;
+          document.getElementById('register-status').innerText = 'Cadastro realizado! Faça login.';
+        });
+    }
 
-    socket.on("disconnect", () => {
-      log("❌ Desconectado");
-    });
+    function loadConversations() {
+      fetch(`http://localhost:3003/api/v1/users/${username}/conversations`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        }
+      })
+        .then(res => res.json())
+        .then(data => {
+          const ul = document.getElementById('conversations-list');
+          ul.innerHTML = '';
+          (data.conversations || []).forEach(conv => {
+            const li = document.createElement('li');
+            li.innerHTML = `<b>${conv.type === 'group' ? 'Grupo' : 'Privada'}</b> - ID: ${conv.id}`;
+            li.style.cursor = 'pointer';
+            li.onclick = () => selectConversation(conv.id);
+            ul.appendChild(li);
+          });
+        });
+    }
 
-    socket.on("message_delivered", (msg) => {
-      log("📩 Mensagem recebida via WS:");
-      log(JSON.stringify(msg, null, 2));
-    });
+    function selectConversation(id) {
+      conversationId = id;
+      document.getElementById('conv-id').innerText = conversationId;
+      document.getElementById('conversation-area').style.display = 'none';
+      document.getElementById('chat-area').style.display = 'flex';
+      connectWS();
+      loadMessages();
+      loadParticipants();
+    }
+
+    // Função para voltar para a lista de conversas
+    function voltarParaConversas() {
+      document.getElementById('chat-area').style.display = 'none';
+      document.getElementById('conversation-area').style.display = '';
+      loadConversations();
+    }
+
+    function createConversation() {
+      const participants = document.getElementById('participants').value.split(',').map(s => s.trim()).filter(Boolean);
+      if (!participants.includes(username)) participants.push(username);
+      const type = document.getElementById('conv-type').value;
+      fetch('http://localhost:3003/api/v1/conversations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        },
+        body: JSON.stringify({ participants, type })
+      })
+        .then(res => res.json())
+        .then(data => {
+          conversationId = data.conversationId;
+          document.getElementById('conv-status').innerText = 'Conversa criada!';
+          document.getElementById('conversation-area').style.display = 'none';
+          document.getElementById('chat-area').style.display = 'flex';
+          document.getElementById('conv-id').innerText = conversationId;
+          connectWS();
+          loadMessages();
+          loadParticipants();
+          loadConversations(); // Atualiza lista após criar
+        });
+    }
+    function loadParticipants() {
+      fetch(`http://localhost:3003/api/v1/conversations/${conversationId}/participants`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        }
+      })
+        .then(res => res.json())
+        .then(data => {
+          const users = data.participants || [];
+          const ul = document.getElementById('participants-list');
+          ul.innerHTML = '';
+          users.forEach(user => {
+            const li = document.createElement('li');
+            li.innerText = user;
+            ul.appendChild(li);
+          });
+        });
+    }
+
+    function loadMessages() {
+      fetch(`http://localhost:3003/api/v1/conversations/${conversationId}/messages`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        }
+      })
+        .then(res => res.json())
+        .then(data => {
+          const messages = data.messages || [];
+          const ul = document.getElementById('messages');
+          ul.innerHTML = '';
+          messages.forEach(msg => {
+            const li = document.createElement('li');
+            li.className = msg.sender_username === username ? 'me' : 'other';
+            li.innerText = `${msg.sender_username}: ${msg.content}`;
+            ul.appendChild(li);
+          });
+        });
+    }
+
+    function sendMessage() {
+      const content = document.getElementById('msg').value;
+      if (!content) return;
+      fetch('http://localhost:3003/api/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        },
+        body: JSON.stringify({ conversationId, content })
+      })
+        .then(() => {
+          addMsg(username, content); // mostra imediatamente
+          document.getElementById('msg').value = '';
+          loadConversations(); // Atualiza lista ao enviar mensagem
+        });
+    }
+
+    function connectWS() {
+      ws = new WebSocket('ws://localhost:3003/?token=' + token);
+      ws.onmessage = function (e) {
+        const data = JSON.parse(e.data);
+        if (data.type === 'welcome') {
+          addSystemMsg('Conectado como ' + data.user);
+        }
+        if (data.type === 'new_message' && data.message.conversation_id == conversationId) {
+          addMsg(data.message.sender_username, data.message.content);
+        }
+      };
+      ws.onclose = function () {
+        addSystemMsg('WebSocket desconectado');
+      };
+    }
+
+    function addMsg(user, content) {
+      const ul = document.getElementById('messages');
+      const li = document.createElement('li');
+      li.className = user === username ? 'me' : 'other';
+      li.innerText = `${user}: ${content}`;
+      ul.appendChild(li);
+    }
+
+    function addSystemMsg(msg) {
+      const ul = document.getElementById('messages');
+      const li = document.createElement('li');
+      li.className = 'system';
+      li.innerText = msg;
+      ul.appendChild(li);
+    }
   </script>
 
-  <!-- IMPORTANTE: cliente socket.io -->
-  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <!-- Botão para voltar para conversas -->
+  <button id="voltar-btn" style="display:none; margin-top:10px;" onclick="voltarParaConversas()">Voltar para
+    conversas</button>
+  <script>
+    // Exibe/esconde botão de voltar conforme área visível
+    function toggleVoltarBtn() {
+      document.getElementById('voltar-btn').style.display = document.getElementById('chat-area').style.display === 'flex' ? '' : 'none';
+    }
+    // Hook para mostrar/esconder botão ao alternar áreas
+    const oldSelectConversation = selectConversation;
+    selectConversation = function (id) {
+      oldSelectConversation(id);
+      toggleVoltarBtn();
+    };
+    const oldVoltar = voltarParaConversas;
+    voltarParaConversas = function () {
+      oldVoltar();
+      toggleVoltarBtn();
+    };
+    // Inicializa botão correto ao carregar
+    window.onload = toggleVoltarBtn;
+  </script>
+
 </body>
+
 </html>
