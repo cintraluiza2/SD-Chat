@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package user;
+
+service UserService {
+  rpc ListUsers (ListUsersRequest) returns (ListUsersResponse);
+  rpc GetPendingMessages (GetPendingMessagesRequest) returns (GetPendingMessagesResponse);
+}
+
+message ListUsersRequest {}
+
+message ListUsersResponse {
+  repeated User users = 1;
+  string error = 2;
+}
+
+message User {
+  string username = 1;
+  bool is_online = 2;
+}
+
+message GetPendingMessagesRequest {
+  string username = 1;
+}
+
+message GetPendingMessagesResponse {
+  repeated PendingMessage pendingMessages = 1;
+  string error = 2;
+}
+
+message PendingMessage {
+  int32 id = 1;
+  string sender_username = 2;
+  int32 conversation_id = 3;
+  string content = 4;
+  string created_at = 5;
+}

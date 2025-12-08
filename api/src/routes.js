@@ -1,10 +1,35 @@
 const express = require('express');
 const db = require('./db');
-const { sendMessageToKafka } = require('./kafka');
+const { sendMessageToKafka, kafkaEmitter } = require('./kafka');
 const { generateToken, authMiddleware } = require('./auth');
 const { hashPassword, comparePassword } = require('./password');
+const { sendMessageGrpc } = require('./grpc-client');
+const { registerGrpc, loginGrpc } = require('./grpc-auth-client');
+const { updatePresenceGrpc, beaconPresenceGrpc } = require('./grpc-presence-client');
+const { listUsersGrpc, getPendingMessagesGrpc } = require('./grpc-user-client');
+const { messageDeliveredGrpc } = require('./grpc-event-client');
 
 const router = express.Router();
+
+// GET /api/v1/users/:username/conversations – lista todas as conversas do usuário
+router.get('/v1/users/:username/conversations', authMiddleware, async (req, res) => {
+  const username = req.params.username;
+  try {
+    // Busca conversas onde o usuário é participante
+    const result = await db.query(
+      `SELECT c.id, c.name, c.type, c.created_at
+       FROM conversations c
+       JOIN conversation_participants cp ON cp.conversation_id = c.id
+       WHERE cp.username = $1
+       ORDER BY c.created_at DESC`,
+      [username]
+    );
+    return res.json({ conversations: result.rows });
+  } catch (err) {
+    console.error('Error fetching user conversations', err);
+    return res.status(500).json({ error: 'Failed to fetch user conversations' });
+  }
+});
 // Cadastro de usuário (register)
 router.post('/v1/auth/register', async (req, res) => {
   const { username, password } = req.body;
@@ -12,17 +37,11 @@ router.post('/v1/auth/register', async (req, res) => {
     return res.status(400).json({ error: 'username and password are required' });
   }
   try {
-    // Garante username único
-    const userExists = await db.query('SELECT id FROM users WHERE username = $1', [username]);
-    if (userExists.rows.length > 0) {
-      return res.status(409).json({ error: 'username already exists' });
+    const result = await registerGrpc(username, password);
+    if (result.error) {
+      return res.status(409).json({ error: result.error });
     }
-    const password_hash = await hashPassword(password);
-    const result = await db.query(
-      'INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING id, username',
-      [username, password_hash]
-    );
-    return res.status(201).json({ id: result.rows[0].id, username });
+    return res.status(201).json({ id: result.id, username: result.username });
   } catch (err) {
     console.error('Error in register', err);
     return res.status(500).json({ error: 'Failed to register' });
@@ -36,17 +55,11 @@ router.post('/v1/auth/login', async (req, res) => {
     return res.status(400).json({ error: 'username and password are required' });
   }
   try {
-    const user = await db.query('SELECT id, username, password_hash FROM users WHERE username = $1', [username]);
-    if (user.rows.length === 0) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+    const result = await loginGrpc(username, password);
+    if (result.error) {
+      return res.status(401).json({ error: result.error });
     }
-    const valid = await comparePassword(password, user.rows[0].password_hash);
-    if (!valid) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-    // Gera JWT com user_id e username
-    const token = generateToken({ user_id: user.rows[0].id, username: user.rows[0].username });
-    return res.json({ token });
+    return res.json({ token: result.token });
   } catch (err) {
     console.error('Error in login', err);
     return res.status(500).json({ error: 'Failed to login' });
@@ -70,23 +83,31 @@ router.get('/v1/conversations/:id/participants', authMiddleware, async (req, res
 });
 
 // GET /api/v1/users/:username/conversations – lista todas as conversas do usuário
-router.get('/v1/users/:username/conversations', authMiddleware, async (req, res) => {
-  const username = req.params.username;
+router.get('/v1/users', authMiddleware, async (req, res) => {
   try {
-    const result = await db.query(
-      `SELECT c.id, c.name, c.type, c.created_at
-         FROM conversations c
-         JOIN conversation_participants cp ON cp.conversation_id = c.id
-         WHERE cp.username = $1
-         ORDER BY c.created_at DESC`,
-      [username]
-    );
-    return res.json({ conversations: result.rows });
+    const result = await listUsersGrpc();
+
+    // Loga o valor bruto recebido do gRPC
+    console.log('DEBUG result.users:', result.users);
+
+    if (result.error) {
+      return res.status(500).json({ error: result.error });
+    }
+
+    const users = result.users.map(u => ({
+      username: u.username,
+      is_online: !!(u.is_online ?? u.isOnline),
+      last_seen: u.last_seen || null,
+    }));
+
+    return res.json({ users });
+
   } catch (err) {
-    console.error('Error fetching user conversations', err);
-    return res.status(500).json({ error: 'Failed to fetch conversations' });
+    console.error('Error fetching users', err);
+    return res.status(500).json({ error: 'Failed to fetch users' });
   }
 });
+
 
 // POST /v1/conversations – cria uma nova conversa (privada ou grupo)
 router.post('/v1/conversations', authMiddleware, async (req, res) => {
@@ -98,18 +119,23 @@ router.post('/v1/conversations', authMiddleware, async (req, res) => {
   try {
     // Regra: evitar conversa privada duplicada
     if (convType === 'private' && participants.length === 2) {
-      // Busca conversa privada existente entre os dois usuários
+      const [userA, userB] = participants.sort();
       const check = await db.query(
-        `SELECT c.id FROM conversations c
-          JOIN conversation_participants cp1 ON cp1.conversation_id = c.id AND cp1.username = $1
-          JOIN conversation_participants cp2 ON cp2.conversation_id = c.id AND cp2.username = $2
+        `SELECT c.id
+         FROM conversations c
+         JOIN conversation_participants cp1 ON cp1.conversation_id = c.id
+         JOIN conversation_participants cp2 ON cp2.conversation_id = c.id
          WHERE c.type = 'private'
+           AND cp1.username IN ($1, $2)
+           AND cp2.username IN ($1, $2)
          GROUP BY c.id
-         HAVING COUNT(*) = 2`,
-        [participants[0], participants[1]]
+         HAVING COUNT(DISTINCT cp1.username) = 2
+         ORDER BY c.created_at ASC
+         LIMIT 1`,
+        [userA, userB]
       );
       if (check.rows.length > 0) {
-        // Já existe, retorna o id existente
+        // Já existe, retorna o id existente (mais antiga)
         return res.status(200).json({ conversationId: check.rows[0].id });
       }
     }
@@ -170,29 +196,25 @@ router.post('/v1/messages', authMiddleware, async (req, res) => {
   }
 
   try {
-    // Primeiro, salva a mensagem no Kafka para ser persistida
+    // Chama o serviço gRPC para processar a mensagem
+    const grpcResponse = await sendMessageGrpc(senderUsername, content);
+    if (!grpcResponse.success) {
+      return res.status(500).json({ error: grpcResponse.error || 'Failed to process message via gRPC' });
+    }
+    // Mantém lógica original para persistência e pendências
     await sendMessageToKafka(msg);
-    
-    // Depois, obtém todos os participantes da conversa
     const participantsResult = await db.query(
       'SELECT username FROM conversation_participants WHERE conversation_id = $1',
       [conversationId]
     );
-    
     const participants = participantsResult.rows.map(r => r.username);
-    
-    // Para cada participante que não é o remetente, verifica se está offline
     for (const participant of participants) {
-      if (participant === senderUsername) continue; // não salva para si mesmo
-      
+      if (participant === senderUsername) continue;
       const presenceResult = await db.query(
         'SELECT is_online FROM user_presence WHERE username = $1',
         [participant]
       );
-      
       const isOnline = presenceResult.rows.length > 0 && presenceResult.rows[0].is_online;
-      
-      // Se está offline, salva como mensagem pendente
       if (!isOnline) {
         await db.query(
           `INSERT INTO pending_messages (recipient_username, sender_username, conversation_id, content, delivered)
@@ -202,11 +224,9 @@ router.post('/v1/messages', authMiddleware, async (req, res) => {
         console.log(`Mensagem salva como pendente para ${participant}`);
       }
     }
-    
-    // a persistência e mudança de status será responsabilidade do worker
     return res.status(202).json({ status: 'queued', message: msg });
   } catch (err) {
-    console.error('Error sending to Kafka', err);
+    console.error('Error sending to gRPC/Kafka', err);
     return res.status(500).json({ error: 'Failed to queue message' });
   }
 });
@@ -231,151 +251,77 @@ router.get('/v1/conversations/:id/messages', authMiddleware, async (req, res) =>
   }
 });
 
-// GET /v1/pending-messages – recupera mensagens pendentes do usuário logado
-router.get('/v1/pending-messages', authMiddleware, async (req, res) => {
-  const username = req.user.username;
-  
-  try {
-    // Busca todas as mensagens pendentes não entregues
-    const result = await db.query(
-      `SELECT id, sender_username, conversation_id, content, created_at
-       FROM pending_messages
-       WHERE recipient_username = $1 AND delivered = false
-       ORDER BY created_at ASC`,
-      [username]
-    );
-    
-    const pendingMessages = result.rows;
-    
-    // Marca todas como entregues
-    if (pendingMessages.length > 0) {
-      await db.query(
-        `UPDATE pending_messages
-         SET delivered = true
-         WHERE recipient_username = $1 AND delivered = false`,
-        [username]
-      );
-      console.log(`${pendingMessages.length} mensagens pendentes entregues para ${username}`);
-    }
-    
-    return res.json({ pendingMessages });
-  } catch (err) {
-    console.error('Error fetching pending messages', err);
-    return res.status(500).json({ error: 'Failed to fetch pending messages' });
-  }
-});
 
-router.post("/v1/events/message-delivered", (req, res) => {
-  const msg = req.body;
-
-  console.log("Evento recebido do Worker:", msg);
-
-  const { kafkaEmitter } = require("./kafka");
-  kafkaEmitter.emit("message_delivered", msg);
-
-  return res.json({ ok: true });
-});
-
-// GET /api/v1/users – lista todos os usuários registrados com status de presença
-router.get('/v1/users', authMiddleware, async (req, res) => {
-  try {
-    const result = await db.query(`
-      SELECT u.username, COALESCE(up.is_online, false) as is_online
-      FROM users u
-      LEFT JOIN user_presence up ON u.username = up.username
-      ORDER BY u.username ASC
-    `);
-    return res.json({ users: result.rows });
-  } catch (err) {
-    console.error('Error fetching users', err);
-    return res.status(500).json({ error: 'Failed to fetch users' });
-  }
-});
 
 // POST /api/v1/presence – atualiza status de presença do usuário
 router.post('/v1/presence', authMiddleware, async (req, res) => {
   const { is_online } = req.body;
   const userUsername = req.user.username;
-  
+  console.log('Rota /v1/presence:', { userUsername, is_online });
   try {
-    // Verifica se já existe registro
-    const exists = await db.query(
-      'SELECT username FROM user_presence WHERE username = $1',
-      [userUsername]
-    );
-    
-    if (exists.rows.length > 0) {
-      // Atualiza registro existente
-      await db.query(
-        'UPDATE user_presence SET is_online = $1, updated_at = NOW() WHERE username = $2',
-        [is_online, userUsername]
-      );
-    } else {
-      // Insere novo registro
-      await db.query(
-        'INSERT INTO user_presence (username, is_online, updated_at) VALUES ($1, $2, NOW())',
-        [userUsername, is_online]
-      );
+    const result = await updatePresenceGrpc(userUsername, is_online);
+    if (!result.ok) {
+      return res.status(500).json({ error: result.error || 'Failed to update presence' });
     }
-    
-    console.log(`Presença atualizada: ${userUsername} -> ${is_online ? 'ONLINE' : 'OFFLINE'}`);
-    return res.json({ ok: true, status: is_online ? 'online' : 'offline' });
+    return res.json({ ok: true, status: result.status });
   } catch (err) {
     console.error('Error updating presence', err);
     return res.status(500).json({ error: 'Failed to update presence' });
   }
 });
 
-// POST /api/v1/presence-beacon – endpoint alternativo para navigator.sendBeacon (sem auth headers)
+// POST /v1/presence-beacon – endpoint alternativo para navigator.sendBeacon (sem auth headers)
 router.post('/v1/presence-beacon', async (req, res) => {
   try {
     const token = req.body.token || req.headers['authorization']?.replace('Bearer ', '');
     const is_online = req.body.is_online === 'true' || req.body.is_online === true;
-    
     if (!token) {
       return res.status(401).json({ error: 'No token provided' });
     }
-    
-    // Decodifica o token sem verificar (apenas para pegar o username durante logout)
-    const parts = token.split('.');
-    if (parts.length !== 3) {
-      return res.status(400).json({ error: 'Invalid token format' });
+    const result = await beaconPresenceGrpc(token, is_online);
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error || 'Failed to update presence' });
     }
-    
-    try {
-      const decoded = JSON.parse(Buffer.from(parts[1], 'base64').toString());
-      const userUsername = decoded.username;
-      
-      // Verifica se já existe registro
-      const exists = await db.query(
-        'SELECT username FROM user_presence WHERE username = $1',
-        [userUsername]
-      );
-      
-      if (exists.rows.length > 0) {
-        // Atualiza registro existente
-        await db.query(
-          'UPDATE user_presence SET is_online = $1, updated_at = NOW() WHERE username = $2',
-          [is_online, userUsername]
-        );
-      } else {
-        // Insere novo registro
-        await db.query(
-          'INSERT INTO user_presence (username, is_online, updated_at) VALUES ($1, $2, NOW())',
-          [userUsername, is_online]
-        );
-      }
-      
-      console.log(`Presença atualizada (beacon): ${userUsername} -> ${is_online ? 'ONLINE' : 'OFFLINE'}`);
-      return res.json({ ok: true, status: is_online ? 'online' : 'offline' });
-    } catch (err) {
-      console.error('Error decoding token:', err);
-      return res.status(400).json({ error: 'Invalid token' });
-    }
+    return res.json({ ok: true, status: result.status });
   } catch (err) {
     console.error('Error in beacon presence', err);
     return res.status(500).json({ error: 'Failed to update presence' });
   }
 });
+
+// GET /v1/pending-messages – recupera mensagens pendentes do usuário logado
+router.get('/v1/pending-messages', authMiddleware, async (req, res) => {
+  const username = req.user.username;
+  try {
+    const result = await getPendingMessagesGrpc(username);
+    if (result.error) {
+      return res.status(500).json({ error: result.error });
+    }
+    return res.json({ pendingMessages: result.pendingMessages });
+  } catch (err) {
+    console.error('Error fetching pending messages', err);
+    return res.status(500).json({ error: 'Failed to fetch pending messages' });
+  }
+});
+
+// POST /v1/events/message-delivered
+router.post("/v1/events/message-delivered", async (req, res) => {
+  console.log('[API] Recebido em /v1/events/message-delivered:', req.body);
+  const msg = req.body;
+  try {
+    // Emite evento para o WebSocket
+    kafkaEmitter.emit('message_delivered', msg);
+    const result = await messageDeliveredGrpc(msg.message_id, msg.recipient_username, msg.status);
+    if (!result.ok) {
+      return res.status(500).json({ error: result.error || 'Failed to process event' });
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Error processing event', err);
+    return res.status(500).json({ error: 'Failed to process event' });
+  }
+});
+
+
 
 module.exports = router;

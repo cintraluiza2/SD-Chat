@@ -43,6 +43,7 @@ function startWebSocketServer(server) {
   //  Aqui processamos eventos vindos do Worker/Kafka
   const db = require("./db");
   kafkaEmitter.on("message_delivered", async (msg) => {
+    console.log('[WS] Evento message_delivered recebido no backend:', msg);
     // Envia status para o remetente
     const wsSender = connectedUsers[msg.sender_username];
     if (wsSender && wsSender.readyState === wsSender.OPEN) {
@@ -65,7 +66,14 @@ function startWebSocketServer(server) {
         // Não envia para o remetente
         if (username !== msg.sender_username) {
           const wsRecipient = connectedUsers[username];
+          if (wsRecipient) {
+            console.log(`[WS] Tentando enviar para ${username}: estado do socket = ${wsRecipient.readyState}`);
+            console.log('[WS] Conteúdo da mensagem enviada para o socket:', JSON.stringify(msg));
+          } else {
+            console.log(`[WS] Nenhum socket encontrado para ${username}`);
+          }
           if (wsRecipient && wsRecipient.readyState === wsRecipient.OPEN) {
+            console.log(`[WS] Enviando new_message para ${username}`);
             wsRecipient.send(
               JSON.stringify({
                 type: "new_message",

@@ -45,7 +45,6 @@ services:
       DATABASE_URL: "postgres://chat:chatpass@db:5432/chatdb"
       KAFKA_BROKER: "kafka:9092"
       JWT_SECRET: "supersecretjwt"
-
       S3_ENDPOINT: "http://minio:9000"        
       S3_PUBLIC_ENDPOINT: "http://localhost:9000"  
       S3_ACCESS_KEY: "minio"
@@ -53,20 +52,25 @@ services:
       S3_BUCKET: "uploads"
     ports:
       - "3003:3000"
+      - "50052:50052"
+      - "50053:50053"
+      - "50054:50054"
+      - "50055:50055"
 
   worker:
     build: ./worker
-   # container_name: chat-worker
+    # container_name: chat-worker
     depends_on:
       - kafka
       - db
     environment:
       DATABASE_URL: "postgres://chat:chatpass@db:5432/chatdb"
       KAFKA_BROKER: "kafka:9092"
-      CALLBACK_URL: "http://chat-api:3000/api/v1/events" #eu nao sei se precisa disso mesmo
+      CALLBACK_URL: "http://chat-api:3000/api/v1/events"
       METRICS_PORT: "3002"
     ports:
-    - "3002"  
+      - "3002"
+      - "50051:50051"  
 
   minio:
     image: minio/minio
@@ -83,7 +87,7 @@ services:
 
   connector_whatsapp_mock:
     build: ./connector_whatsapp_mock
-   # container_name: connector_whatsapp_mock
+    # container_name: connector_whatsapp_mock
     depends_on:
       - kafka
       - api
@@ -95,7 +99,7 @@ services:
 
   connector_instagram_mock:
     build: ./connector_instagram_mock
-   # container_name: connector_instagram_mock
+    # container_name: connector_instagram_mock
     depends_on:
       - kafka
       - api

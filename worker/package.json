@@ -3,12 +3,16 @@
   "version": "1.0.0",
   "main": "src/worker.js",
   "scripts": {
-    "start": "node src/worker.js"
+    "start": "node src/worker.js",
+    "grpc": "node src/grpc-server.js",
+    "grpc-user": "node src/grpc-user-server.js"
   },
   "dependencies": {
-    "pg": "^8.13.0",
-    "kafkajs": "^2.2.4",
+    "@grpc/grpc-js": "^1.14.2",
+    "@grpc/proto-loader": "^0.8.0",
     "express": "^4.21.0",
+    "kafkajs": "^2.2.4",
+    "pg": "^8.13.0",
     "prom-client": "^14.1.1"
   }
 }

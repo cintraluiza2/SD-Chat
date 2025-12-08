@@ -1,0 +1,39 @@
+# Node.js
+node_modules/
+package-lock.json
+
+# Docker/Minio
+minio-data/
+
+# Logs
+*.log
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# Arquivos temporários
+*.tmp
+*.swp
+*.swo
+
+# Arquivos de build temporários
+*.bak
+
+# Outras pastas de build/cache
+**/.cache/
+**/dist/
+
+# Arquivos do VSCode
+.vscode/
+
+# Arquivos temporários do Minio
+minio-data/.minio.sys/tmp/
+minio-data/.minio.sys/buckets/.bloomcycle.bin/
+minio-data/.minio.sys/buckets/.usage.json/
+
+# Outros arquivos não versionáveis
+*.sqlite
+*.sqlite3
+*.db
+*.pid

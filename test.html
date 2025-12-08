@@ -269,7 +269,7 @@
       <h3 style="margin: 0;">💬 Conversas</h3>
       <button onclick="logout()" style="background: #e74c3c; padding: 8px 12px; font-size: 14px;">🚪 Logout</button>
     </div>
-    
+
     <h3>Criar conversa</h3>
     <input id="participants" placeholder="Participantes (separados por vírgula)" />
     <select id="conv-type">
@@ -279,12 +279,12 @@
     <button onclick="createConversation()">Criar</button>
     <div id="conv-status"></div>
     <hr>
-    
+
     <h3>👥 Usuários Disponíveis</h3>
     <button onclick="loadOnlineUsers()">Atualizar Usuários Online</button>
     <ul id="online-users-list" style="margin-top: 10px;"></ul>
     <hr>
-    
+
     <h3>Minhas conversas</h3>
     <button onclick="loadConversations()" style="margin-bottom: 10px;">Atualizar Conversas</button>
     <ul id="conversations-list"></ul>
@@ -294,7 +294,8 @@
     <div class="chat-panel">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <h3>Chat</h3>
-        <button onclick="voltarParaConversas()" style="background: #ff6b6b; padding: 8px 15px; font-size: 14px;">← Voltar para conversas</button>
+        <button onclick="voltarParaConversas()" style="background: #ff6b6b; padding: 8px 15px; font-size: 14px;">←
+          Voltar para conversas</button>
       </div>
       <div>Conversa ID: <span id="conv-id"></span></div>
       <div id="chat">
@@ -319,13 +320,14 @@
 
     // Notifica presença ao servidor quando usuario faz login
     function setUserOnline() {
+      console.log('Enviando presença online:', { username, is_online: true });
       fetch('http://localhost:3003/api/v1/presence', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ' + token
         },
-        body: JSON.stringify({ is_online: true })
+        body: JSON.stringify({ username, is_online: true })
       })
         .then(res => res.json())
         .then(data => {
@@ -338,7 +340,7 @@
     function startHeartbeat() {
       // Primeiro heartbeat imediato
       setUserOnline();
-      
+
       // Depois a cada 10 segundos
       heartbeatInterval = setInterval(() => {
         if (token && username) {
@@ -358,11 +360,11 @@
     // Notifica presença offline quando usuario sai/fecha aba
     function setUserOffline() {
       if (!token || !username) return;
-      
+
       stopHeartbeat();
-      
+
       console.log('Enviando status OFFLINE para:', username);
-      
+
       // Usa fetch com keepalive para garantir envio mesmo ao fechar
       fetch('http://localhost:3003/api/v1/presence', {
         method: 'POST',
@@ -370,12 +372,12 @@
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ' + token
         },
-        body: JSON.stringify({ is_online: false }),
+        body: JSON.stringify({ username, is_online: false }),
         keepalive: true
       })
         .then(() => console.log('Status OFFLINE enviado com sucesso'))
         .catch(err => console.error('Erro ao enviar OFFLINE:', err));
-      
+
       // Backup: também tenta uma segunda chamada com beacon se disponível
       try {
         const form = new FormData();
@@ -422,17 +424,17 @@
           const tokenBox = document.getElementById('token-box');
           tokenBox.innerHTML = `<b>Token JWT:</b><br><span>${token}</span>`;
           tokenBox.style.display = 'block';
-          
+
           // Marcar usuário como ONLINE e iniciar heartbeat
           startHeartbeat();
-          
+
           // Carregar conversas e usuários disponíveis
           loadConversations();
           loadOnlineUsers();
-          
+
           // Carregar mensagens pendentes
           loadPendingMessages();
-          
+
           // Atualizar lista de usuários a cada 5 segundos
           clearInterval(presenceInterval);
           presenceInterval = setInterval(() => {
@@ -539,23 +541,23 @@
           const ul = document.getElementById('online-users-list');
           ul.innerHTML = '';
           const users = data.users || [];
-          
+
           console.log('Total de usuários:', users.length);
-          
+
           if (users.length === 0) {
             ul.innerHTML = '<li style="color: #999;">Nenhum usuário disponível</li>';
             return;
           }
-          
+
           users.forEach(user => {
             if (user.username === username) {
               console.log('Pulando usuário atual:', user.username);
               return; // Não mostra a si mesmo
             }
-            
+
             const status = user.is_online ? '🟢' : '🔴';
             const statusText = user.is_online ? 'Online' : 'Offline';
-            
+
             const li = document.createElement('li');
             li.innerHTML = `${status} ${user.username}`;
             li.style.cursor = 'pointer';
@@ -567,10 +569,10 @@
             li.onmouseover = () => li.style.background = user.is_online ? '#c3e6cb' : '#f5c6cb';
             li.onmouseout = () => li.style.background = user.is_online ? '#d4edda' : '#f8d7da';
             li.style.opacity = user.is_online ? '1' : '0.7';
-            
+
             // Permite clicar mesmo que esteja offline - as mensagens serão salvas como pendentes
             li.onclick = () => startPrivateChat(user.username);
-            
+
             const tooltip = document.createElement('small');
             tooltip.style.display = 'block';
             tooltip.style.fontSize = '12px';
@@ -578,10 +580,10 @@
             tooltip.style.marginTop = '3px';
             tooltip.innerText = user.is_online ? 'Clique para iniciar conversa' : 'Clique para enviar mensagem (será entregue ao fazer login)';
             li.appendChild(tooltip);
-            
+
             ul.appendChild(li);
           });
-          
+
           console.log('Usuários carregados com sucesso');
         })
         .catch(err => {
@@ -639,15 +641,15 @@
         ws.close();
         ws = null;
       }
-      
+
       conversationId = null;
       document.getElementById('messages').innerHTML = '';
       document.getElementById('participants-list').innerHTML = '';
       document.getElementById('msg').value = '';
-      
+
       document.getElementById('chat-area').style.display = 'none';
       document.getElementById('conversation-area').style.display = '';
-      
+
       loadConversations();
       loadOnlineUsers();
     }
@@ -655,7 +657,7 @@
     // Carrega mensagens pendentes que chegaram enquanto estava offline
     function loadPendingMessages() {
       if (!token) return;
-      
+
       fetch('http://localhost:3003/api/v1/pending-messages', {
         method: 'GET',
         headers: {
@@ -666,14 +668,14 @@
         .then(res => res.json())
         .then(data => {
           const pendingMessages = data.pendingMessages || [];
-          
+
           if (pendingMessages.length === 0) {
             console.log('Nenhuma mensagem pendente');
             return;
           }
-          
+
           console.log(`${pendingMessages.length} mensagens pendentes recebidas`);
-          
+
           // Agrupa mensagens por conversation_id
           const messagesByConv = {};
           pendingMessages.forEach(msg => {
@@ -682,7 +684,7 @@
             }
             messagesByConv[msg.conversation_id].push(msg);
           });
-          
+
           // Mostra notificação
           let notificationText = `📬 Você tem ${pendingMessages.length} mensagem(ns) pendente(s):\n\n`;
           Object.keys(messagesByConv).forEach(convId => {
@@ -690,9 +692,25 @@
             const senders = [...new Set(msgs.map(m => m.sender_username))].join(', ');
             notificationText += `• Conversa ${convId}: ${msgs.length} msg(ns) de ${senders}\n`;
           });
-          
+
           alert(notificationText);
-          
+
+          // Após exibir a notificação, marcar as mensagens como lidas/entregues
+          fetch('http://localhost:3003/api/v1/pending-messages/mark-delivered', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify({ messageIds: pendingMessages.map(m => m.id) })
+          })
+            .then(() => {
+              console.log('Mensagens pendentes marcadas como entregues.');
+            })
+            .catch(err => {
+              console.error('Erro ao marcar mensagens como entregues:', err);
+            });
+
           // Recarrega as conversas para atualizar as mensagens
           loadConversations();
         })
@@ -703,7 +721,7 @@
     function logout() {
       // Marcar como offline
       setUserOffline();
-      
+
       // Limpar dados
       clearInterval(presenceInterval);
       stopHeartbeat();
@@ -714,7 +732,7 @@
         ws.close();
         ws = null;
       }
-      
+
       // Limpar interface
       document.getElementById('login-area').style.display = '';
       document.getElementById('conversation-area').style.display = 'none';
@@ -726,7 +744,7 @@
       document.getElementById('login-password').value = '';
       document.getElementById('token-box').style.display = 'none';
       document.getElementById('token-box').innerHTML = '';
-      
+
       alert('Logout realizado! Você foi marcado como offline.');
     }
 
@@ -818,11 +836,18 @@
       ws = new WebSocket('ws://localhost:3003/?token=' + token);
       ws.onmessage = function (e) {
         const data = JSON.parse(e.data);
+        console.log('WebSocket recebido:', data); // DEBUG
         if (data.type === 'welcome') {
           addSystemMsg('Conectado como ' + data.user);
         }
         if (data.type === 'new_message' && data.message.conversation_id == conversationId) {
-          addMsg(data.message.sender_username, data.message.content);
+          console.log('Recebido new_message para esta conversa:', data.message); // DEBUG
+          // Mostra todos os campos recebidos para debug
+          console.log('Campos recebidos:', Object.keys(data.message));
+          // Corrige: usa os campos corretos do objeto message
+          const sender = data.message.sender_username || data.message.remetente || 'Desconhecido';
+          const content = data.message.content || data.message.texto || '';
+          addMsg(sender, content);
         }
       };
       ws.onclose = function () {
@@ -831,6 +856,7 @@
     }
 
     function addMsg(user, content) {
+      console.log('Adicionando mensagem ao chat:', user, content); // DEBUG
       const ul = document.getElementById('messages');
       const li = document.createElement('li');
       li.className = user === username ? 'me' : 'other';
