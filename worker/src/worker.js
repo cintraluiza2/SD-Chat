@@ -15,7 +15,20 @@ async function startWorker() {
 
       console.log("[WORKER] Received:", msg);
 
-      // 1. persistir no banco
+      // Se a mensagem já tem ID e status DELIVERED (ex: arquivo), apenas notifica
+      if (msg.id && msg.status === 'DELIVERED') {
+        console.log("[WORKER] Message already delivered, just notifying:", msg.id);
+        
+        // Envia o evento para a API notificar WebSocket
+        await fetch("http://chat-api:3000/api/v1/events/message-delivered", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(msg)
+        });
+        return;
+      }
+
+      // Mensagem nova (texto): persistir no banco
       const insert = await db.query(
         `INSERT INTO messages (conversation_id, sender_username, content, type, status)
          VALUES ($1, $2, $3, $4, $5)
@@ -27,7 +40,7 @@ async function startWorker() {
       msg.created_at = insert.rows[0].created_at;
       msg.status = "DELIVERED";
 
-      // 2. atualizar status
+      // Atualizar status
       await db.query(
         "UPDATE messages SET status = $1 WHERE id = $2",
         ["DELIVERED", msg.id]
@@ -35,16 +48,12 @@ async function startWorker() {
 
       console.log("[WORKER] Delivered:", msg);
 
-      // 3. Envia o evento para a API (*** ESSENCIAL ***)
+      // Envia o evento para a API (*** ESSENCIAL ***)
       await fetch("http://chat-api:3000/api/v1/events/message-delivered", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(msg)
       });
-
-      // Removido o uso de messageLatency e messagesProcessed para evitar crash
-
-
     },
   });
 }

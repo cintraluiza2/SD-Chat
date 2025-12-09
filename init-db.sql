@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS messages (
   content TEXT NOT NULL,
   type VARCHAR(20) NOT NULL DEFAULT 'text', -- 'text', 'file'
   status VARCHAR(20) NOT NULL DEFAULT 'SENT', -- SENT, DELIVERED
+  file_id INT REFERENCES files(id),
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );

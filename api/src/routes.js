@@ -69,10 +69,11 @@ router.get('/v1/conversations/:id/participants', authMiddleware, async (req, res
   }
 });
 
-// GET /api/v1/users/:username/conversations – lista todas as conversas do usuário
+// GET /api/v1/users/:username/conversations – lista todas as conversas do usuário COM participantes
 router.get('/v1/users/:username/conversations', authMiddleware, async (req, res) => {
   const username = req.params.username;
   try {
+    // Busca as conversas do usuário
     const result = await db.query(
       `SELECT c.id, c.name, c.type, c.created_at
          FROM conversations c
@@ -81,7 +82,20 @@ router.get('/v1/users/:username/conversations', authMiddleware, async (req, res)
          ORDER BY c.created_at DESC`,
       [username]
     );
-    return res.json({ conversations: result.rows });
+    
+    // Para cada conversa, busca os participantes
+    const conversations = await Promise.all(result.rows.map(async (conv) => {
+      const participantsResult = await db.query(
+        'SELECT username FROM conversation_participants WHERE conversation_id = $1',
+        [conv.id]
+      );
+      return {
+        ...conv,
+        participants: participantsResult.rows.map(r => r.username)
+      };
+    }));
+    
+    return res.json({ conversations });
   } catch (err) {
     console.error('Error fetching user conversations', err);
     return res.status(500).json({ error: 'Failed to fetch conversations' });
@@ -211,17 +225,25 @@ router.post('/v1/messages', authMiddleware, async (req, res) => {
   }
 });
 
-// GET /v1/conversations/:id/messages – lista mensagens já persistidas
+// GET /v1/conversations/:id/messages – lista mensagens já persistidas com status de leitura
 router.get('/v1/conversations/:id/messages', authMiddleware, async (req, res) => {
   const conversationId = req.params.id;
+  const currentUser = req.user.username;
 
   try {
     const result = await db.query(
-      `SELECT id, conversation_id, sender_username, content, type, status, created_at, updated_at
-       FROM messages
-       WHERE conversation_id = $1
-       ORDER BY created_at ASC`,
-      [conversationId]
+      `SELECT m.id, m.conversation_id, m.sender_username, m.content, m.type, m.status, m.created_at, m.updated_at,
+              m.file_id, f.file_key, f.size, f.bucket, f.uploader,
+              CASE 
+                WHEN m.sender_username = $2 THEN 
+                  EXISTS(SELECT 1 FROM message_read_status WHERE message_id = m.id)
+                ELSE false
+              END as is_read
+       FROM messages m
+       LEFT JOIN files f ON m.file_id = f.id
+       WHERE m.conversation_id = $1
+       ORDER BY m.created_at ASC`,
+      [conversationId, currentUser]
     );
 
     return res.json({ conversationId, messages: result.rows });
@@ -375,6 +397,53 @@ router.post('/v1/presence-beacon', async (req, res) => {
   } catch (err) {
     console.error('Error in beacon presence', err);
     return res.status(500).json({ error: 'Failed to update presence' });
+  }
+});
+
+// POST /v1/messages/:id/read - Marca mensagem como lida
+router.post('/v1/messages/:id/read', authMiddleware, async (req, res) => {
+  const messageId = req.params.id;
+  const readerUsername = req.user.username;
+  
+  try {
+    // Verifica se a mensagem existe
+    const msgCheck = await db.query(
+      'SELECT sender_username FROM messages WHERE id = $1',
+      [messageId]
+    );
+    
+    if (msgCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+    
+    // Não marca como lida se for o próprio remetente
+    if (msgCheck.rows[0].sender_username === readerUsername) {
+      return res.json({ ok: true, note: 'Own message' });
+    }
+    
+    // Insere registro de leitura (ou ignora se já existe)
+    await db.query(
+      `INSERT INTO message_read_status (message_id, reader_username, read_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (message_id, reader_username) DO NOTHING`,
+      [messageId, readerUsername]
+    );
+    
+    console.log(`✓ Mensagem ${messageId} marcada como lida por ${readerUsername}`);
+    
+    // Notifica o remetente via WebSocket (se estiver online)
+    // Emite evento para o websocket.js
+    const { kafkaEmitter } = require('./kafka');
+    kafkaEmitter.emit('message_read', {
+      message_id: messageId,
+      reader: readerUsername,
+      sender: msgCheck.rows[0].sender_username
+    });
+    
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Error marking message as read:', err);
+    return res.status(500).json({ error: 'Failed to mark as read' });
   }
 });
 

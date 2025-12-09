@@ -3,7 +3,8 @@ const {
   CreateMultipartUploadCommand,
   UploadPartCommand,
   CompleteMultipartUploadCommand,
-  PutObjectCommand
+  PutObjectCommand,
+  GetObjectCommand
 } = require("@aws-sdk/client-s3");
 
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
@@ -65,7 +66,7 @@ async function completeMultipart(bucket, key, uploadId, parts) {
 // -------- DOWNLOAD --------
 
 async function generateDownloadUrl(bucket, key, expires = 3600) {
-  const command = new PutObjectCommand({
+  const command = new GetObjectCommand({
     Bucket: bucket,
     Key: key
   });

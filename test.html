@@ -123,13 +123,15 @@
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
     }
 
-    /* Lista de mensagens */
+    /* Lista de mensagens - Estilo WhatsApp */
     #chat {
       border: none;
       height: 350px;
       overflow-y: auto;
       margin-bottom: 15px;
-      background: #f9f9fb;
+      background: #efeae2;
+      background-image: 
+        repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,.03) 10px, rgba(255,255,255,.03) 20px);
       border-radius: 12px;
       padding: 15px;
     }
@@ -138,38 +140,82 @@
       list-style: none;
       padding: 0;
       margin: 0;
+      display: flex;
+      flex-direction: column;
     }
 
-    /* ======== BALÕES DE MENSAGEM ======== */
+    /* ======== BALÕES DE MENSAGEM ESTILO WHATSAPP ======== */
     #messages li {
-      margin-bottom: 12px;
-      padding: 8px 12px;
-      display: inline-block;
-      max-width: 80%;
-      border-radius: 12px;
-      line-height: 1.4em;
+      margin-bottom: 8px;
+      padding: 10px 14px;
+      max-width: 65%;
+      border-radius: 8px;
+      line-height: 1.5em;
+      word-wrap: break-word;
+      position: relative;
+      clear: both;
     }
 
-    /* Minhas mensagens */
+    /* Minhas mensagens - Alinhadas à DIREITA (verde WhatsApp) */
     .me {
-      background: #d1e7ff;
-      color: #0e3a5f;
-      font-weight: 600;
+      background: #dcf8c6;
+      color: #000;
       align-self: flex-end;
+      margin-left: auto;
+      border-bottom-right-radius: 2px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+      padding: 10px 14px;
+      padding-bottom: 28px !important; /* Força espaço embaixo para o status */
+      position: relative;
+      min-height: 55px;
+    }
+    
+    /* Texto da mensagem com margem inferior */
+    .me .message-text {
+      display: block;
+      margin-bottom: 12px !important; /* Força espaço entre texto e status */
+      padding-right: 5px;
+    }
+    
+    /* Status de leitura (checkmarks) - mais visível e afastado */
+    .read-status {
+      position: absolute;
+      bottom: 6px;
+      right: 10px;
+      font-size: 14px; /* Maior */
+      color: #8696a0; /* Cinza mais forte */
+      display: flex;
+      align-items: center;
+      gap: 1px;
+      font-weight: bold;
+    }
+    
+    .read-status.read {
+      color: #53bdeb; /* Azul WhatsApp mais forte */
+      font-size: 15px; /* Ainda maior quando lido */
     }
 
-    /* Mensagem de outros */
+    /* Mensagem de outros - Alinhadas à ESQUERDA (branco) */
     .other {
-      background: #e2f5e8;
-      color: #225b32;
-      border: 1px solid #c5e8d0;
+      background: #ffffff;
+      color: #000;
+      align-self: flex-start;
+      margin-right: auto;
+      border-bottom-left-radius: 2px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
     }
 
-    /* Mensagens do sistema */
+    /* Mensagens do sistema (centralizadas) */
     .system {
-      background: #f0f0f0;
-      color: #777;
+      background: #e1f3fb;
+      color: #54656f;
       font-style: italic;
+      font-size: 13px;
+      align-self: center;
+      max-width: 80%;
+      text-align: center;
+      padding: 6px 12px;
+      margin: 4px 0;
     }
 
     /* Input do chat */
@@ -243,6 +289,19 @@
 </head>
 
 <body>
+  <script>
+    // Detectar qualquer tentativa de sair da página
+    window.addEventListener('beforeunload', function(e) {
+      console.error('🚨 PÁGINA TENTANDO DESCARREGAR!');
+      console.trace();
+    });
+    
+    // Detectar erros não capturados
+    window.addEventListener('error', function(e) {
+      console.error('🔴 ERRO GLOBAL:', e.message, e.filename, e.lineno);
+      alert('ERRO: ' + e.message);
+    });
+  </script>
   <h2 id="app-title">SD-Chat</h2>
 
 
@@ -294,14 +353,18 @@
     <div class="chat-panel">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <h3>Chat</h3>
-        <button onclick="voltarParaConversas()" style="background: #ff6b6b; padding: 8px 15px; font-size: 14px;">← Voltar para conversas</button>
+        <button onclick="voltarParaConversas()" style="background: #3498db; padding: 8px 15px; font-size: 14px;">← Voltar</button>
       </div>
       <div>Conversa ID: <span id="conv-id"></span></div>
       <div id="chat">
         <ul id="messages"></ul>
       </div>
-      <input id="msg" placeholder="Digite sua mensagem" />
-      <button onclick="sendMessage()">Enviar</button>
+      <div style="display: flex; gap: 10px; margin-top: 10px;">
+        <input id="msg" placeholder="Digite sua mensagem" style="flex: 1;" />
+        <button onclick="sendMessage()">Enviar Mensagem</button>
+        <button onclick="triggerFileInput()" style="background: #27ae60;">📎 Arquivo</button>
+        <input id="file-input" type="file" style="display: none;" onchange="handleFileSelect(event)" />
+      </div>
     </div>
     <div class="participants-panel">
       <h4>👥 Participantes</h4>
@@ -310,86 +373,57 @@
   </div>
 
   <script>
-    let token = null;
-    let username = null;
-    let conversationId = null;
+    console.log('🚀 PÁGINA CARREGADA EM:', new Date().toISOString());
+    console.log('🔍 Performance navigation type:', performance.navigation.type);
+    // 0 = navegação normal, 1 = reload, 2 = back/forward
+    
+    // Tentar restaurar sessão do localStorage
+    let token = localStorage.getItem('chat_token');
+    let username = localStorage.getItem('chat_username');
+    let conversationId = localStorage.getItem('chat_conversationId') ? parseInt(localStorage.getItem('chat_conversationId')) : null;
     let ws = null;
     let presenceInterval = null;
+    let readStatusInterval = null; // Intervalo para atualizar status de leitura
+
+    console.log('🔍 Variáveis inicializadas - conversationId:', conversationId, 'type:', typeof conversationId);
+
+    // Se tem sessão salva, restaurar automaticamente
+    if (token && username) {
+      console.log('✅ Restaurando sessão do localStorage para:', username);
+      document.getElementById('login-area').style.display = 'none';
+      document.getElementById('login-status').innerText = '';
+      document.getElementById('app-title').innerText = `🎯 Chat - ${username}`;
+      
+      if (conversationId) {
+        // Restaurar conversa diretamente
+        console.log('✅ Restaurando conversa:', conversationId, 'type:', typeof conversationId);
+        document.getElementById('conversation-area').style.display = 'none';
+        document.getElementById('chat-area').style.display = 'flex';
+        document.getElementById('conv-id').innerText = conversationId;
+        connectWS();
+        loadMessages();
+        loadParticipants();
+        loadOnlineUsers();
+      } else {
+        // Mostrar lista de conversas
+        document.getElementById('conversation-area').style.display = '';
+        loadConversations();
+      }
+    }
     let heartbeatInterval = null;
 
     // Notifica presença ao servidor quando usuario faz login
-    function setUserOnline() {
-      fetch('http://localhost:3003/api/v1/presence', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + token
-        },
-        body: JSON.stringify({ is_online: true })
-      })
-        .then(res => res.json())
-        .then(data => {
-          console.log('Status atualizado para ONLINE:', data);
-        })
-        .catch(err => console.error('Erro ao atualizar presença:', err));
-    }
+    // ATUALIZAÇÃO: Presença agora é gerenciada via WebSocket (Conexão = Online, Desconexão = Offline)
+    // Não precisamos mais de polling ou heartbeat manual
 
-    // Mantém o usuário online com heartbeat a cada 10 segundos
-    function startHeartbeat() {
-      // Primeiro heartbeat imediato
-      setUserOnline();
-      
-      // Depois a cada 10 segundos
-      heartbeatInterval = setInterval(() => {
-        if (token && username) {
-          setUserOnline();
-        }
-      }, 10000);
-    }
+    /* 
+    function setUserOnline() { ... }
+    function startHeartbeat() { ... }
+    function stopHeartbeat() { ... }
+    function setUserOffline() { ... }
+    */
 
-    // Para o heartbeat
-    function stopHeartbeat() {
-      if (heartbeatInterval) {
-        clearInterval(heartbeatInterval);
-        heartbeatInterval = null;
-      }
-    }
 
-    // Notifica presença offline quando usuario sai/fecha aba
-    function setUserOffline() {
-      if (!token || !username) return;
-      
-      stopHeartbeat();
-      
-      console.log('Enviando status OFFLINE para:', username);
-      
-      // Usa fetch com keepalive para garantir envio mesmo ao fechar
-      fetch('http://localhost:3003/api/v1/presence', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + token
-        },
-        body: JSON.stringify({ is_online: false }),
-        keepalive: true
-      })
-        .then(() => console.log('Status OFFLINE enviado com sucesso'))
-        .catch(err => console.error('Erro ao enviar OFFLINE:', err));
-      
-      // Backup: também tenta uma segunda chamada com beacon se disponível
-      try {
-        const form = new FormData();
-        form.append('token', token);
-        form.append('is_online', 'false');
-        navigator.sendBeacon('http://localhost:3003/api/v1/presence-beacon', form);
-      } catch (e) {
-        console.log('sendBeacon não disponível');
-      }
-    }
-
-    // Listener para quando o usuário fecha/abandona a aba/janela
-    window.addEventListener('beforeunload', setUserOffline);
-    window.addEventListener('unload', setUserOffline);
 
     function login() {
       username = document.getElementById('username').value.trim();
@@ -414,6 +448,11 @@
         .then(data => {
           if (!data) return;
           token = data.token;
+          
+          // Salvar no localStorage
+          localStorage.setItem('chat_token', token);
+          localStorage.setItem('chat_username', username);
+          
           document.getElementById('login-status').innerText = 'Autenticado!';
           document.getElementById('login-area').style.display = 'none';
           document.getElementById('conversation-area').style.display = '';
@@ -423,21 +462,21 @@
           tokenBox.innerHTML = `<b>Token JWT:</b><br><span>${token}</span>`;
           tokenBox.style.display = 'block';
           
-          // Marcar usuário como ONLINE e iniciar heartbeat
-          startHeartbeat();
+          // Conectar WebSocket imediatamente (isso define como ONLINE)
+          connectWS();
           
-          // Carregar conversas e usuários disponíveis
+          // Carregar conversas e usuários disponíveis (apenas carga inicial)
           loadConversations();
           loadOnlineUsers();
           
           // Carregar mensagens pendentes
           loadPendingMessages();
           
-          // Atualizar lista de usuários a cada 5 segundos
-          clearInterval(presenceInterval);
-          presenceInterval = setInterval(() => {
-            loadOnlineUsers();
-          }, 5000);
+          // NÃO usar interval - causa problemas após upload
+          // Se quiser, só carrega uma vez
+          // presenceInterval = setInterval(() => {
+          //   loadOnlineUsers();
+          // }, 5000);
         });
     }
 
@@ -487,7 +526,16 @@
           'Authorization': 'Bearer ' + token
         }
       })
-        .then(res => res.json())
+        .then(res => {
+          if (!res.ok) {
+            if (res.status === 401) {
+              console.error("401 em loadConversations - ignorando logout");
+              // logout();
+            }
+            throw new Error(`HTTP ${res.status}`);
+          }
+          return res.json();
+        })
         .then(data => {
           const ul = document.getElementById('conversations-list');
           ul.innerHTML = '';
@@ -506,7 +554,11 @@
             ul.appendChild(li);
           });
         })
-        .catch(err => console.error('Erro ao carregar conversas:', err));
+        .catch(err => {
+          console.error('Erro ao carregar conversas:', err);
+          console.error('Stack completo:', err.stack);
+          // Não fazer logout aqui, apenas registrar
+        });
     }
 
     function loadOnlineUsers() {
@@ -586,54 +638,129 @@
         })
         .catch(err => {
           console.error('Erro ao carregar usuários:', err);
-          const ul = document.getElementById('online-users-list');
-          ul.innerHTML = `<li style="color: red;">❌ ${err.message}</li>`;
+          if (err.message.includes('401')) {
+            console.error("401 em loadOnlineUsers - ignorando logout");
+            // logout();
+          } else {
+            const ul = document.getElementById('online-users-list');
+            ul.innerHTML = `<li style="color: red;">❌ ${err.message}</li>`;
+          }
         });
     }
 
     function startPrivateChat(otherUser) {
-      const participants = [username, otherUser];
-      fetch('http://localhost:3003/api/v1/conversations', {
-        method: 'POST',
+      // Normalizar participantes: ordenar alfabeticamente para comparação consistente
+      const participants = [username, otherUser].sort();
+      
+      console.log('🔍 Verificando se já existe conversa privada com:', otherUser);
+      console.log('   Participantes normalizados:', participants);
+      
+      // Primeiro, buscar todas as conversas para verificar se já existe
+      fetch(`http://localhost:3003/api/v1/users/${username}/conversations`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ' + token
-        },
-        body: JSON.stringify({ participants, type: 'private' })
+        }
       })
         .then(res => res.json())
         .then(data => {
-          conversationId = data.conversationId;
-          document.getElementById('conv-id').innerText = conversationId;
-          document.getElementById('conversation-area').style.display = 'none';
-          document.getElementById('chat-area').style.display = 'flex';
-          connectWS();
-          loadMessages();
-          loadParticipants();
-          // Mostra mensagem informando se o usuário está offline
-          const onlineStatus = document.querySelector(`[data-user="${otherUser}"]`);
-          if (onlineStatus && !onlineStatus.textContent.includes('🟢')) {
-            addSystemMsg(`⚠️ ${otherUser} está offline. Suas mensagens serão entregues quando fizer login.`);
+          const conversations = data.conversations || [];
+          console.log('📋 Total de conversas encontradas:', conversations.length);
+          
+          // Procurar conversa privada existente com esse usuário
+          const existingConv = conversations.find(conv => {
+            const convParticipants = (conv.participants || []).sort();
+            console.log('  Comparando:', {
+              buscando: participants,
+              encontrado: convParticipants,
+              id: conv.id
+            });
+            
+            // Verifica se é conversa privada (2 participantes) exatamente iguais
+            if (convParticipants.length !== 2) return false;
+            const match = participants[0] === convParticipants[0] && participants[1] === convParticipants[1];
+            if (match) console.log('  ✅ MATCH encontrado! ID:', conv.id);
+            return match;
+          });
+          
+          if (existingConv) {
+            // Conversa já existe, abre ela
+            console.log('✅ Conversa privada já existe com ID:', existingConv.id, '- Abrindo...');
+            selectConversation(existingConv.id);
+            
+            // Mostra mensagem informando se o usuário está offline
+            const onlineStatus = document.querySelector(`[data-user="${otherUser}"]`);
+            if (onlineStatus && !onlineStatus.textContent.includes('🟢')) {
+              addSystemMsg(`⚠️ ${otherUser} está offline. Suas mensagens serão entregues quando fizer login.`);
+            }
+          } else {
+            // Não existe, criar nova conversa privada
+            console.log('📝 Criando nova conversa privada com:', otherUser);
+            fetch('http://localhost:3003/api/v1/conversations', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + token
+              },
+              body: JSON.stringify({ participants, type: 'private' })
+            })
+              .then(res => {
+                if (!res.ok) {
+                  if (res.status === 401) {
+                      console.error("401 em startPrivateChat - ignorando logout");
+                      // logout();
+                  }
+                  throw new Error(`HTTP ${res.status}`);
+                }
+                return res.json();
+              })
+              .then(data => {
+                conversationId = data.conversationId;
+                localStorage.setItem('chat_conversationId', conversationId);
+                console.log('✅ Nova conversa privada criada:', conversationId);
+                document.getElementById('conv-id').innerText = conversationId;
+                document.getElementById('conversation-area').style.display = 'none';
+                document.getElementById('chat-area').style.display = 'flex';
+                connectWS();
+                loadMessages();
+                loadParticipants();
+                // Mostra mensagem informando se o usuário está offline
+                const onlineStatus = document.querySelector(`[data-user="${otherUser}"]`);
+                if (onlineStatus && !onlineStatus.textContent.includes('🟢')) {
+                  addSystemMsg(`⚠️ ${otherUser} está offline. Suas mensagens serão entregues quando fizer login.`);
+                }
+              })
+              .catch(err => {
+                console.error('Erro ao criar conversa:', err);
+                alert('Erro ao abrir conversa: ' + err.message);
+              });
           }
         })
         .catch(err => {
-          console.error('Erro ao criar conversa:', err);
-          alert('Erro ao abrir conversa: ' + err.message);
+          console.error('Erro ao verificar conversas:', err);
+          alert('Erro ao verificar conversas: ' + err.message);
         });
     }
 
     function selectConversation(id) {
       conversationId = id;
+      localStorage.setItem('chat_conversationId', id);
       document.getElementById('conv-id').innerText = conversationId;
       document.getElementById('conversation-area').style.display = 'none';
       document.getElementById('chat-area').style.display = 'flex';
       connectWS();
       loadMessages();
       loadParticipants();
+      
+      // Inicia atualização automática do status de leitura
+      startReadStatusUpdates();
     }
 
     // Função para voltar para a lista de conversas
     function voltarParaConversas() {
+      // Para atualização de status de leitura
+      stopReadStatusUpdates();
+      
       // Fecha WebSocket
       if (ws) {
         ws.close();
@@ -649,7 +776,8 @@
       document.getElementById('conversation-area').style.display = '';
       
       loadConversations();
-      loadOnlineUsers();
+      // NÃO carregar usuários online ao fazer logout
+      // loadOnlineUsers();
     }
 
     // Carrega mensagens pendentes que chegaram enquanto estava offline
@@ -663,7 +791,16 @@
           'Authorization': 'Bearer ' + token
         }
       })
-        .then(res => res.json())
+        .then(res => {
+          if (!res.ok) {
+            if (res.status === 401) {
+                console.error("401 em loadPendingMessages - ignorando logout");
+                // logout();
+            }
+            throw new Error(`HTTP ${res.status}`);
+          }
+          return res.json();
+        })
         .then(data => {
           const pendingMessages = data.pendingMessages || [];
           
@@ -701,15 +838,28 @@
 
     // Função para fazer logout (sair da aplicação)
     function logout() {
-      // Marcar como offline
-      setUserOffline();
+      console.log("🔴 LOGOUT iniciado");
+      
+      // Para atualizações automáticas
+      stopReadStatusUpdates();
+      
+      // Limpar localStorage
+      localStorage.removeItem('chat_token');
+      localStorage.removeItem('chat_username');
+      localStorage.removeItem('chat_conversationId');
+      
+      // Limpar intervalos
+      if (presenceInterval) {
+        clearInterval(presenceInterval);
+        presenceInterval = null;
+      }
       
       // Limpar dados
-      clearInterval(presenceInterval);
-      stopHeartbeat();
       token = null;
       username = null;
       conversationId = null;
+      
+      // Fecha WebSocket (isso já marca como offline automaticamente)
       if (ws) {
         ws.close();
         ws = null;
@@ -722,37 +872,100 @@
       document.getElementById('register-area').style.display = 'none';
       document.getElementById('app-title').innerText = '🎯 Chat';
       document.getElementById('login-status').innerText = '';
-      document.getElementById('login-username').value = '';
-      document.getElementById('login-password').value = '';
+      document.getElementById('username').value = '';
+      document.getElementById('password').value = '';
       document.getElementById('token-box').style.display = 'none';
       document.getElementById('token-box').innerHTML = '';
       
-      alert('Logout realizado! Você foi marcado como offline.');
+      console.log('✅ Logout realizado com sucesso!');
     }
 
     function createConversation() {
       const participants = document.getElementById('participants').value.split(',').map(s => s.trim()).filter(Boolean);
       if (!participants.includes(username)) participants.push(username);
       const type = document.getElementById('conv-type').value;
-      fetch('http://localhost:3003/api/v1/conversations', {
-        method: 'POST',
+      
+      // Normalizar participantes: ordenar alfabeticamente para comparação consistente
+      const normalizedParticipants = [...participants].sort();
+      
+      console.log('🔍 Verificando se já existe conversa com:', normalizedParticipants);
+      
+      // Primeiro, buscar todas as conversas para verificar se já existe
+      fetch(`http://localhost:3003/api/v1/users/${username}/conversations`, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ' + token
-        },
-        body: JSON.stringify({ participants, type })
+        }
       })
         .then(res => res.json())
         .then(data => {
-          conversationId = data.conversationId;
-          document.getElementById('conv-status').innerText = 'Conversa criada!';
-          document.getElementById('conversation-area').style.display = 'none';
-          document.getElementById('chat-area').style.display = 'flex';
-          document.getElementById('conv-id').innerText = conversationId;
-          connectWS();
-          loadMessages();
-          loadParticipants();
-          loadConversations(); // Atualiza lista após criar
+          const conversations = data.conversations || [];
+          console.log('📋 Total de conversas encontradas:', conversations.length);
+          
+          // Procurar conversa existente com os mesmos participantes
+          const existingConv = conversations.find(conv => {
+            const convParticipants = (conv.participants || []).sort();
+            console.log('  Comparando:', {
+              buscando: normalizedParticipants,
+              encontrado: convParticipants,
+              id: conv.id
+            });
+            
+            // Verifica se tem o mesmo número de participantes
+            if (convParticipants.length !== normalizedParticipants.length) return false;
+            
+            // Verifica se todos os participantes estão presentes (arrays já ordenados)
+            const match = normalizedParticipants.every((p, i) => convParticipants[i] === p);
+            if (match) console.log('  ✅ MATCH encontrado! ID:', conv.id);
+            return match;
+          });
+          
+          if (existingConv) {
+            // Conversa já existe, abre ela em vez de criar nova
+            console.log('✅ Conversa já existe com ID:', existingConv.id, '- Abrindo...');
+            document.getElementById('conv-status').innerText = 'Abrindo conversa existente (ID: ' + existingConv.id + ')';
+            selectConversation(existingConv.id);
+          } else {
+            // Não existe, criar nova
+            console.log('📝 Criando nova conversa...');
+            fetch('http://localhost:3003/api/v1/conversations', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + token
+              },
+              body: JSON.stringify({ participants, type })
+            })
+              .then(res => {
+                if (!res.ok) {
+                  if (res.status === 401) {
+                      console.error("401 em createConversation - ignorando logout");
+                      // logout();
+                  }
+                  throw new Error(`HTTP ${res.status}`);
+                }
+                return res.json();
+              })
+              .then(data => {
+                conversationId = data.conversationId;
+                localStorage.setItem('chat_conversationId', conversationId);
+                console.log('✅ Nova conversa criada:', conversationId);
+                console.log('✅ Salvo no localStorage:', localStorage.getItem('chat_conversationId'));
+                console.log('✅ Variável conversationId:', conversationId);
+                document.getElementById('conv-status').innerText = 'Conversa criada!';
+                document.getElementById('conversation-area').style.display = 'none';
+                document.getElementById('chat-area').style.display = 'flex';
+                document.getElementById('conv-id').innerText = conversationId;
+                connectWS();
+                loadMessages();
+                loadParticipants();
+                loadConversations(); // Atualiza lista após criar
+              });
+          }
+        })
+        .catch(err => {
+          console.error('Erro ao verificar/criar conversa:', err);
+          document.getElementById('conv-status').innerText = 'Erro: ' + err.message;
         });
     }
     function loadParticipants() {
@@ -762,7 +975,16 @@
           'Authorization': 'Bearer ' + token
         }
       })
-        .then(res => res.json())
+        .then(res => {
+          if (!res.ok) {
+            if (res.status === 401) {
+                console.error("401 em loadParticipants - ignorando logout");
+                // logout();
+            }
+            throw new Error(`HTTP ${res.status}`);
+          }
+          return res.json();
+        })
         .then(data => {
           const users = data.participants || [];
           const ul = document.getElementById('participants-list');
@@ -782,17 +1004,166 @@
           'Authorization': 'Bearer ' + token
         }
       })
-        .then(res => res.json())
+        .then(res => {
+          if (!res.ok) {
+            if (res.status === 401) {
+              console.error("401 em loadMessages - ignorando logout");
+              // logout();
+            }
+            throw new Error(`HTTP ${res.status}`);
+          }
+          return res.json();
+        })
         .then(data => {
           const messages = data.messages || [];
           const ul = document.getElementById('messages');
+          
+          // Salva posição do scroll antes de atualizar
+          const chatContainer = document.getElementById('chat');
+          const wasAtBottom = chatContainer.scrollHeight - chatContainer.scrollTop <= chatContainer.clientHeight + 100;
+          const scrollPos = chatContainer.scrollTop;
+          
           ul.innerHTML = '';
           messages.forEach(msg => {
             const li = document.createElement('li');
-            li.className = msg.sender_username === username ? 'me' : 'other';
-            li.innerText = `${msg.sender_username}: ${msg.content}`;
+            const isMe = msg.sender_username === username;
+            li.className = isMe ? 'me' : 'other';
+            if (msg.id) li.dataset.messageId = msg.id;
+            
+            // Se é arquivo (type === 'file' e tem file_id)
+            if (msg.type === 'file' && msg.file_id) {
+              const fileName = msg.file_key ? msg.file_key.split('/').pop() : 'arquivo';
+              const fileSize = msg.size ? `(${(msg.size / 1024).toFixed(2)} KB)` : '';
+              
+              // Se não for minha mensagem, mostra nome
+              if (!isMe) {
+                const userName = document.createElement('div');
+                userName.style.fontWeight = 'bold';
+                userName.style.fontSize = '13px';
+                userName.style.marginBottom = '2px';
+                userName.style.color = '#25d366';
+                userName.innerText = msg.sender_username;
+                li.appendChild(userName);
+              }
+              
+              const downloadBtn = document.createElement('button');
+              downloadBtn.innerHTML = `📄 ${fileName} <br><small>${fileSize}</small><br>⬇️ Clique para baixar`;
+              downloadBtn.style.cssText = `
+                background: #f8f9fa;
+                color: #2c3e50;
+                border: 1px solid #bdc3c7;
+                padding: 10px 15px;
+                border-radius: 8px;
+                cursor: pointer;
+                font-weight: 500;
+                margin-top: 8px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 5px;
+                width: 100%;
+                text-align: center;
+                transition: all 0.2s;
+              `;
+              downloadBtn.onclick = () => downloadFile(msg.file_id, fileName);
+              downloadBtn.onmouseover = () => {
+                downloadBtn.style.background = '#e9ecef';
+                downloadBtn.style.borderColor = '#aab7b8';
+              };
+              downloadBtn.onmouseout = () => {
+                downloadBtn.style.background = '#f8f9fa';
+                downloadBtn.style.borderColor = '#bdc3c7';
+              };
+              
+              li.appendChild(downloadBtn);
+              
+              // Status de leitura para arquivos
+              if (isMe && msg.id) {
+                const readStatus = document.createElement('span');
+                readStatus.className = msg.is_read ? 'read-status read' : 'read-status';
+                readStatus.innerHTML = msg.is_read ? '✓✓' : '✓';
+                li.appendChild(readStatus);
+              }
+            } else {
+              // Mensagem de texto normal
+              // Se não for minha mensagem, mostra nome
+              if (!isMe) {
+                const userName = document.createElement('div');
+                userName.style.fontWeight = 'bold';
+                userName.style.fontSize = '13px';
+                userName.style.marginBottom = '2px';
+                userName.style.color = '#25d366';
+                userName.innerText = msg.sender_username;
+                li.appendChild(userName);
+              }
+              
+              const msgText = document.createElement('span');
+              msgText.className = 'message-text';
+              msgText.innerText = msg.content;
+              li.appendChild(msgText);
+              
+              // Status de leitura para mensagens de texto
+              if (isMe && msg.id) {
+                const readStatus = document.createElement('span');
+                readStatus.className = msg.is_read ? 'read-status read' : 'read-status';
+                readStatus.innerHTML = msg.is_read ? '✓✓' : '✓';
+                li.appendChild(readStatus);
+              }
+            }
+            
             ul.appendChild(li);
+            
+            // Se não é minha mensagem, marcar como lida
+            if (!isMe && msg.id) {
+              markMessageAsRead(msg.id);
+            }
           });
+          
+          // Restaura posição do scroll ou vai para o final se estava no final
+          setTimeout(() => {
+            if (wasAtBottom) {
+              chatContainer.scrollTop = chatContainer.scrollHeight;
+            } else {
+              chatContainer.scrollTop = scrollPos;
+            }
+          }, 10);
+        })
+        .catch(err => {
+          console.error('Erro ao carregar mensagens:', err);
+          console.error('Stack completo:', err.stack);
+          // Não fazer nada de dramático, apenas registrar
+        });
+    }
+
+    function downloadFile(fileId, fileName) {
+      console.log(`Baixando arquivo ${fileName} (ID: ${fileId})`);
+      
+      fetch(`http://localhost:3003/api/v1/files/${fileId}/download`, {
+        headers: {
+          'Authorization': 'Bearer ' + token
+        }
+      })
+        .then(res => {
+          if (!res.ok) {
+            if (res.status === 401) {
+                console.error("401 em downloadFile - ignorando logout");
+                // logout();
+            }
+            throw new Error(`HTTP ${res.status}`);
+          }
+          return res.json();
+        })
+        .then(data => {
+          if (data.url) {
+            console.log('URL de download gerada:', data.url);
+            window.open(data.url, '_blank');
+          } else {
+            alert('Erro ao gerar URL de download');
+          }
+        })
+        .catch(err => {
+          console.error('Erro ao obter URL de download:', err);
+          alert('Erro ao baixar arquivo: ' + err.message);
         });
     }
 
@@ -807,35 +1178,275 @@
         },
         body: JSON.stringify({ conversationId, content })
       })
+        .then(res => {
+          if (!res.ok) {
+            if (res.status === 401) {
+                console.error("401 em sendMessage - ignorando logout");
+                // logout();
+            }
+            throw new Error(`HTTP ${res.status}`);
+          }
+          return res.json();
+        })
         .then(() => {
-          addMsg(username, content); // mostra imediatamente
+          // Não adiciona aqui, aguarda vir pelo WebSocket com ID correto
           document.getElementById('msg').value = '';
           loadConversations(); // Atualiza lista ao enviar mensagem
-        });
+          
+          // Recarrega mensagens para pegar o ID correto da mensagem enviada
+          setTimeout(() => loadMessages(), 500);
+        })
+        .catch(err => {
+        console.error('Erro ao enviar mensagem:', err);
+        alert('Erro ao enviar mensagem: ' + err.message);
+      });
     }
+
+    // Funções para Upload de Arquivo
+    function triggerFileInput() {
+      if (!conversationId) {
+        alert('Selecione uma conversa primeiro');
+        return;
+      }
+      document.getElementById('file-input').click();
+    }
+
+    function handleFileSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      console.log('Arquivo selecionado:', file.name, file.size);
+      uploadFile(file);
+      document.getElementById('file-input').value = '';
+    }
+
+    async function uploadFile(file) {
+      try {
+        // PASSO 1: Iniciar upload multipart
+        console.log('1/4 Inicializando upload...');
+        const initResponse = await fetch('http://localhost:3003/api/v1/files/init', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token
+          },
+          body: JSON.stringify({
+            filename: file.name,
+            size: file.size,
+            checksum: 'auto',
+            conversationId: parseInt(conversationId)
+          })
+        });
+
+        if (!initResponse.ok) {
+          throw new Error(`Init falhou: ${initResponse.status}`);
+        }
+
+        const initData = await initResponse.json();
+        console.log('2/4 Upload iniciado, uploadId:', initData.uploadId);
+
+        // PASSO 2: Obter presigned URL para parte
+        const partResponse = await fetch('http://localhost:3003/api/v1/files/part-url', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token
+          },
+          body: JSON.stringify({
+            key: initData.key,
+            uploadId: initData.uploadId,
+            partNumber: 1
+          })
+        });
+
+        if (!partResponse.ok) {
+          throw new Error(`Part-URL falhou: ${partResponse.status}`);
+        }
+
+        const partData = await partResponse.json();
+        console.log('3/4 URL de upload gerada');
+
+        // PASSO 3: Upload direto para MinIO via presigned URL
+        const uploadResponse = await fetch(partData.url, {
+          method: 'PUT',
+          body: file,
+          headers: {
+            'Content-Type': file.type || 'application/octet-stream'
+          }
+        });
+
+        if (!uploadResponse.ok) {
+          throw new Error(`Upload para MinIO falhou: ${uploadResponse.status}`);
+        }
+
+        const etag = uploadResponse.headers.get('etag') || '""';
+        console.log('4/4 Completando upload, ETag:', etag);
+
+        // PASSO 4: Completar upload
+        const completeResponse = await fetch('http://localhost:3003/api/v1/files/complete', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token
+          },
+          body: JSON.stringify({
+            key: initData.key,
+            uploadId: initData.uploadId,
+            parts: [{ PartNumber: 1, ETag: etag }],
+            conversationId: parseInt(conversationId),
+            filename: file.name
+          })
+        });
+
+        if (!completeResponse.ok) {
+          throw new Error(`Complete falhou: ${completeResponse.status}`);
+        }
+
+        console.log('✅ Arquivo enviado com sucesso!');
+        loadMessages();
+        loadConversations();
+        // alert("Arquivo enviado! Verifique se o app fecha agora.");
+      } catch (err) {
+        console.error('Erro ao enviar arquivo:', err);
+        alert('Erro ao enviar arquivo: ' + err.message);
+      }
+    }
+
+    // Adicionar manipulador global de erros não tratados
+    window.addEventListener('error', (event) => {
+      console.error('Erro global capturado:', event.error);
+      console.error('Stack:', event.error?.stack);
+    });
+
+    window.addEventListener('unhandledrejection', (event) => {
+      console.error('Promise rejection não tratada:', event.reason);
+      event.preventDefault(); // Previne que o app morra
+    });
 
     function connectWS() {
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        console.warn('⚠️ WebSocket já existe, não criando novo');
+        return;
+      }
+      console.log('🔌 Criando novo WebSocket...');
       ws = new WebSocket('ws://localhost:3003/?token=' + token);
       ws.onmessage = function (e) {
-        const data = JSON.parse(e.data);
-        if (data.type === 'welcome') {
-          addSystemMsg('Conectado como ' + data.user);
-        }
+        try {
+          const data = JSON.parse(e.data);
+          
+          // Mensagem de boas-vindas removida para não poluir o chat
+          // if (data.type === 'welcome') {
+          //   addSystemMsg('Conectado como ' + data.user);
+          // }
+          
         if (data.type === 'new_message' && data.message.conversation_id == conversationId) {
-          addMsg(data.message.sender_username, data.message.content);
+          // Se for arquivo, recarrega mensagens para exibir corretamente
+          if (data.message.type === 'file') {
+            console.log('✅ Recebido arquivo via WS:', data.message);
+            try {
+              loadMessages();
+            } catch (err) {
+              console.error('❌ Erro ao carregar mensagens após arquivo:', err);
+            }
+          } else {
+            // Mensagem de texto: adiciona diretamente
+            addMsg(data.message.sender_username, data.message.content, data.message.id);
+          }
+        }
+        
+        if (data.type === 'message_status') {
+          console.log('✅ Status da mensagem recebido:', data.message);
+        }
+        
+        // Notificação de que mensagem foi lida
+        if (data.type === 'message_read') {
+          console.log('✓✓ Mensagem lida:', data.message_id, 'por', data.reader);
+          updateReadStatus(data.message_id);
+        }
+        
+        // ATUALIZAÇÃO: Manipular eventos de presença via WebSocket
+          if (data.type === 'presence_update') {
+            console.log('Atualização de presença (WS):', data);
+            // Recarrega a lista de usuários apenas quando houver mudança real
+            loadOnlineUsers();
+          }
+        } catch (err) {
+          console.error('❌ ERRO CRÍTICO ao processar mensagem WebSocket:', err);
+          console.error('Dados recebidos:', e.data);
+          console.error('Stack:', err.stack);
+          alert('ERRO ao processar WebSocket: ' + err.message);
         }
       };
-      ws.onclose = function () {
-        addSystemMsg('WebSocket desconectado');
+      ws.onclose = function (event) {
+        console.error('🔴 WebSocket FECHADO!', event);
+        console.error('Código:', event.code, 'Razão:', event.reason, 'Clean:', event.wasClean);
+        console.log('🔍 conversationId no momento do close:', conversationId, 'type:', typeof conversationId);
+        console.log('🔍 conversationId no localStorage:', localStorage.getItem('chat_conversationId'));
+        
+        // Pega o ID do localStorage que é a fonte da verdade
+        const savedConvId = localStorage.getItem('chat_conversationId');
+        
+        // RECONECTAR AUTOMATICAMENTE após 500ms
+        if (savedConvId && token) {
+          console.log('🔄 Reconectando em 500ms...');
+          const currentConvId = parseInt(savedConvId);
+          setTimeout(() => {
+            if (token && currentConvId) {
+              console.log('🔄 Reconectando WebSocket e recarregando dados para conversa:', currentConvId);
+              
+              // Garante que está na conversa certa
+              conversationId = currentConvId;
+              document.getElementById('conv-id').innerText = currentConvId;
+              
+              connectWS();
+              loadMessages();
+              loadParticipants();
+              loadOnlineUsers();
+            }
+          }, 500);
+        }
+      };
+      ws.onerror = function (error) {
+        console.error('🔴 WebSocket ERROR:', error);
       };
     }
 
-    function addMsg(user, content) {
+    function addMsg(user, content, messageId = null, isRead = false) {
       const ul = document.getElementById('messages');
       const li = document.createElement('li');
-      li.className = user === username ? 'me' : 'other';
-      li.innerText = `${user}: ${content}`;
+      const isMe = user === username;
+      li.className = isMe ? 'me' : 'other';
+      if (messageId) li.dataset.messageId = messageId;
+      
+      // Se não for minha mensagem, mostra o nome do usuário
+      if (!isMe) {
+        const userName = document.createElement('div');
+        userName.style.fontWeight = 'bold';
+        userName.style.fontSize = '13px';
+        userName.style.marginBottom = '2px';
+        userName.style.color = '#25d366';
+        userName.innerText = user;
+        li.appendChild(userName);
+      }
+      
+      const msgText = document.createElement('span');
+      msgText.className = 'message-text';
+      msgText.innerText = content;
+      li.appendChild(msgText);
+      
+      // Se for minha mensagem, adiciona checkmarks
+      if (isMe && messageId) {
+        const readStatus = document.createElement('span');
+        readStatus.className = isRead ? 'read-status read' : 'read-status';
+        readStatus.innerHTML = isRead ? '✓✓' : '✓'; // ✓✓ = lido, ✓ = entregue
+        li.appendChild(readStatus);
+      }
+      
       ul.appendChild(li);
+      
+      // Se não é minha mensagem e tenho messageId, marcar como lida
+      if (!isMe && messageId) {
+        markMessageAsRead(messageId);
+      }
     }
 
     function addSystemMsg(msg) {
@@ -844,6 +1455,73 @@
       li.className = 'system';
       li.innerText = msg;
       ul.appendChild(li);
+    }
+    
+    // Marca mensagem como lida
+    function markMessageAsRead(messageId) {
+      // Só marca como lida se tiver messageId, token E estiver na conversa
+      if (!messageId || !token || !conversationId) return;
+      
+      // Verifica se a área de chat está visível (usuário realmente na conversa)
+      const chatArea = document.getElementById('chat-area');
+      if (!chatArea || chatArea.style.display === 'none') {
+        console.log(`⚠️ Não marca como lida - usuário fora da conversa`);
+        return;
+      }
+      
+      fetch(`http://localhost:3003/api/v1/messages/${messageId}/read`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        }
+      })
+      .then(res => {
+        if (res.ok) {
+          console.log(`✓ Mensagem ${messageId} marcada como lida`);
+        }
+      })
+      .catch(err => console.error('Erro ao marcar como lida:', err));
+    }
+    
+    // Atualiza status visual de leitura
+    function updateReadStatus(messageId) {
+      const li = document.querySelector(`[data-message-id="${messageId}"]`);
+      if (li) {
+        const readStatus = li.querySelector('.read-status');
+        if (readStatus) {
+          readStatus.classList.add('read');
+          readStatus.innerHTML = '✓✓'; // Dois checks azuis
+        }
+      }
+    }
+    
+    // Inicia atualização periódica do status de leitura
+    function startReadStatusUpdates() {
+      // Limpa intervalo anterior se existir
+      if (readStatusInterval) {
+        clearInterval(readStatusInterval);
+      }
+      
+      // Atualiza a cada 3 segundos
+      readStatusInterval = setInterval(() => {
+        // Só atualiza se estiver na conversa E a área de chat estiver visível
+        const chatArea = document.getElementById('chat-area');
+        if (conversationId && token && chatArea && chatArea.style.display !== 'none') {
+          loadMessages(); // Recarrega mensagens para pegar status atualizado
+        }
+      }, 3000);
+      
+      console.log('🔄 Atualização de status de leitura iniciada');
+    }
+    
+    // Para atualização periódica
+    function stopReadStatusUpdates() {
+      if (readStatusInterval) {
+        clearInterval(readStatusInterval);
+        readStatusInterval = null;
+        console.log('❌ Atualização de status de leitura parada');
+      }
     }
   </script>
 

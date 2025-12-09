@@ -2,6 +2,7 @@ const express = require("express");
 const db = require("./db");
 const { authMiddleware } = require("./auth");
 const { generateDownloadUrl } = require("./storage");
+const { sendMessageToKafka } = require("./kafka");
 
 const {
   initMultipartUpload,
@@ -56,9 +57,42 @@ router.post("/v1/files/part-url", authMiddleware, async (req, res) => {
 // COMPLETAR UPLOAD
 router.post("/v1/files/complete", authMiddleware, async (req, res) => {
   try {
-    const { key, uploadId, parts } = req.body;
+    const { key, uploadId, parts, conversationId, filename } = req.body;
 
     const result = await completeMultipart(BUCKET, key, uploadId, parts);
+
+    // Buscar o file_id que foi criado em /v1/files/init
+    const fileResult = await db.query(
+      "SELECT id FROM files WHERE file_key = $1",
+      [key]
+    );
+
+    if (fileResult.rows.length > 0) {
+      const fileId = fileResult.rows[0].id;
+
+      // Criar mensagem do tipo 'file' na conversa
+      const insertResult = await db.query(
+        `INSERT INTO messages (conversation_id, sender_username, content, type, file_id, status)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, conversation_id, sender_username, content, type, file_id, status, created_at`,
+        [conversationId, req.user.username, filename, 'file', fileId, 'delivered']
+      );
+
+      const message = insertResult.rows[0];
+      console.log(`✅ Arquivo criado como mensagem - fileId: ${fileId}, conversationId: ${conversationId}`);
+
+      // IMPORTANTE: Enviar evento via Kafka para notificar via WebSocket
+      await sendMessageToKafka({
+        id: message.id,
+        conversation_id: message.conversation_id,
+        sender_username: message.sender_username,
+        content: message.content,
+        type: message.type,
+        file_id: message.file_id,
+        status: 'DELIVERED',
+        timestamp: message.created_at.toISOString()
+      });
+    }
 
     return res.json({ status: "completed", result });
 
