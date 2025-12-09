@@ -5,6 +5,33 @@ const { generateToken, authMiddleware } = require('./auth');
 const { hashPassword, comparePassword } = require('./password');
 
 const router = express.Router();
+
+/**
+ * @openapi
+ * /v1/auth/register:
+ *   post:
+ *     tags:
+ *       - Auth
+ *     summary: Register a new user
+ *     description: Creates a new user account with username and password
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/AuthRequest'
+ *     responses:
+ *       201:
+ *         description: User created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthResponse'
+ *       400:
+ *         description: Missing username or password
+ *       409:
+ *         description: User already exists
+ */
 // Cadastro de usuário (register)
 router.post('/v1/auth/register', async (req, res) => {
   const { username, password } = req.body;
@@ -28,6 +55,30 @@ router.post('/v1/auth/register', async (req, res) => {
     return res.status(500).json({ error: 'Failed to register' });
   }
 });
+/**
+ * @openapi
+ * /v1/auth/login:
+ *   post:
+ *     tags:
+ *       - Auth
+ *     summary: Authenticate user and get JWT token
+ *     description: Validates credentials and returns a JWT token for subsequent requests
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/AuthRequest'
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthResponse'
+ *       401:
+ *         description: Invalid credentials
+ */
 
 // Login seguro (username + senha)
 router.post('/v1/auth/login', async (req, res) => {
@@ -53,6 +104,40 @@ router.post('/v1/auth/login', async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /v1/conversations/{id}/participants:
+ *   get:
+ *     tags:
+ *       - Conversations
+ *     summary: List conversation participants
+ *     description: Retrieves all participants of a conversation
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         example: 1
+ *         description: Conversation ID
+ *     responses:
+ *       200:
+ *         description: Participants retrieved
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 participants:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                   example: ['john_doe', 'jane_smith']
+ *       500:
+ *         description: Server error
+ */
 
 // GET /api/v1/conversations/:id/participants – lista participantes da conversa
 router.get('/v1/conversations/:id/participants', authMiddleware, async (req, res) => {
@@ -69,6 +154,38 @@ router.get('/v1/conversations/:id/participants', authMiddleware, async (req, res
   }
 });
 
+/**
+ * @openapi
+ * /v1/users/{username}/conversations:
+ *   get:
+ *     tags:
+ *       - Conversations
+ *     summary: Lista conversas do usuário
+ *     description: Retorna as conversas do usuário autenticado (ou de outro usuário) incluindo participantes.
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: username
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Nome de usuário
+ *     responses:
+ *       200:
+ *         description: Conversas retornadas com participantes
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 conversations:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Conversation'
+ *       500:
+ *         description: Erro no servidor
+ */
 // GET /api/v1/users/:username/conversations – lista todas as conversas do usuário COM participantes
 router.get('/v1/users/:username/conversations', authMiddleware, async (req, res) => {
   const username = req.params.username;
@@ -101,6 +218,37 @@ router.get('/v1/users/:username/conversations', authMiddleware, async (req, res)
     return res.status(500).json({ error: 'Failed to fetch conversations' });
   }
 });
+/**
+ * @openapi
+ * /v1/conversations:
+ *   post:
+ *     tags:
+ *       - Conversations
+ *     summary: Create a new conversation
+ *     description: Creates a private or group conversation. For private conversations, returns existing conversation if already exists.
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/ConversationRequest'
+ *     responses:
+ *       201:
+ *         description: Conversation created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 conversationId:
+ *                   type: integer
+ *       200:
+ *         description: Existing conversation returned
+ *       400:
+ *         description: Invalid request
+ */
 
 // POST /v1/conversations – cria uma nova conversa (privada ou grupo)
 router.post('/v1/conversations', authMiddleware, async (req, res) => {
@@ -147,8 +295,39 @@ router.post('/v1/conversations', authMiddleware, async (req, res) => {
   }
 });
 
-// LOGIN SIMPLES (sem senha, apenas para gerar JWT para testes)
+/**
+ * @openapi
+ * /v1/messages:
+ *   post:
+ *     tags:
+ *       - Messages
+ *     summary: Send a message
+ *     description: Sends a text or file message to a conversation. Automatically saves as pending if recipient is offline.
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/MessageRequest'
+ *     responses:
+ *       202:
+ *         description: Message queued
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                 message:
+ *                   $ref: '#/components/schemas/Message'
+ *       400:
+ *         description: Missing required fields
+ */
 
+// LOGIN SIMPLES (sem senha, apenas para gerar JWT para testes)
 
 // POST /v1/messages – envia mensagem de texto
 router.post('/v1/messages', authMiddleware, async (req, res) => {
@@ -225,6 +404,40 @@ router.post('/v1/messages', authMiddleware, async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /v1/conversations/{id}/messages:
+ *   get:
+ *     tags:
+ *       - Messages
+ *     summary: Lista mensagens de uma conversa
+ *     description: Retorna mensagens persistidas de uma conversa, incluindo informação se a mensagem foi lida pelo remetente.
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID da conversa
+ *     responses:
+ *       200:
+ *         description: Lista de mensagens
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 conversationId:
+ *                   type: integer
+ *                 messages:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Message'
+ *       500:
+ *         description: Erro no servidor
+ */
 // GET /v1/conversations/:id/messages – lista mensagens já persistidas com status de leitura
 router.get('/v1/conversations/:id/messages', authMiddleware, async (req, res) => {
   const conversationId = req.params.id;
@@ -253,6 +466,31 @@ router.get('/v1/conversations/:id/messages', authMiddleware, async (req, res) =>
   }
 });
 
+/**
+ * @openapi
+ * /v1/pending-messages:
+ *   get:
+ *     tags:
+ *       - Messages
+ *     summary: Recupera mensagens pendentes
+ *     description: Retorna mensagens pendentes não entregues para o usuário autenticado e marca como entregues.
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Mensagens pendentes retornadas
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 pendingMessages:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/PendingMessage'
+ *       500:
+ *         description: Erro no servidor
+ */
 // GET /v1/pending-messages – recupera mensagens pendentes do usuário logado
 router.get('/v1/pending-messages', authMiddleware, async (req, res) => {
   const username = req.user.username;
@@ -287,6 +525,40 @@ router.get('/v1/pending-messages', authMiddleware, async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /v1/events/message-delivered:
+ *   post:
+ *     tags:
+ *       - Events
+ *     summary: Evento - mensagem entregue
+ *     description: Endpoint usado pelo worker para notificar que uma mensagem foi entregue; emite evento interno.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               message_id:
+ *                 type: integer
+ *               recipient:
+ *                 type: string
+ *               delivered_at:
+ *                 type: string
+ *                 format: date-time
+ *     responses:
+ *       200:
+ *         description: Evento recebido
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                   example: true
+ */
 router.post("/v1/events/message-delivered", (req, res) => {
   const msg = req.body;
 
@@ -298,6 +570,31 @@ router.post("/v1/events/message-delivered", (req, res) => {
   return res.json({ ok: true });
 });
 
+/**
+ * @openapi
+ * /v1/users:
+ *   get:
+ *     tags:
+ *       - Users
+ *     summary: Lista usuários com presença
+ *     description: Lista todos os usuários registrados junto com o status de presença (online/offline).
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de usuários
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 users:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/User'
+ *       500:
+ *         description: Erro no servidor
+ */
 // GET /api/v1/users – lista todos os usuários registrados com status de presença
 router.get('/v1/users', authMiddleware, async (req, res) => {
   try {
@@ -314,6 +611,32 @@ router.get('/v1/users', authMiddleware, async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /v1/presence:
+ *   post:
+ *     tags:
+ *       - Presence
+ *     summary: Update user presence status
+ *     description: Updates whether the authenticated user is online or offline
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/PresenceRequest'
+ *     responses:
+ *       200:
+ *         description: Presence updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PresenceResponse'
+ *       500:
+ *         description: Server error
+ */
 // POST /api/v1/presence – atualiza status de presença do usuário
 router.post('/v1/presence', authMiddleware, async (req, res) => {
   const { is_online } = req.body;
@@ -347,6 +670,40 @@ router.post('/v1/presence', authMiddleware, async (req, res) => {
     return res.status(500).json({ error: 'Failed to update presence' });
   }
 });
+
+/**
+ * @openapi
+ * /v1/presence-beacon:
+ *   post:
+ *     tags:
+ *       - Presence
+ *     summary: Update presence via beacon (no auth headers)
+ *     description: Alternative endpoint for navigator.sendBeacon that accepts token in body or header. Used for page unload events.
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               token:
+ *                 type: string
+ *                 description: JWT token (can also be sent in Authorization header)
+ *               is_online:
+ *                 type: boolean
+ *                 example: false
+ *     responses:
+ *       200:
+ *         description: Presence updated via beacon
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PresenceResponse'
+ *       401:
+ *         description: No token provided
+ *       400:
+ *         description: Failed to update presence
+ */
 
 // POST /api/v1/presence-beacon – endpoint alternativo para navigator.sendBeacon (sem auth headers)
 router.post('/v1/presence-beacon', async (req, res) => {
@@ -400,6 +757,41 @@ router.post('/v1/presence-beacon', async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /v1/messages/{id}/read:
+ *   post:
+ *     tags:
+ *       - Messages
+ *     summary: Marca mensagem como lida
+ *     description: Marca uma mensagem como lida pelo usuário autenticado.
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID da mensagem
+ *     responses:
+ *       200:
+ *         description: Mensagem marcada como lida
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                   example: true
+ *       401:
+ *         description: Não autorizado
+ *       404:
+ *         description: Mensagem não encontrada
+ *       500:
+ *         description: Erro no servidor
+ */
 // POST /v1/messages/:id/read - Marca mensagem como lida
 router.post('/v1/messages/:id/read', authMiddleware, async (req, res) => {
   const messageId = req.params.id;

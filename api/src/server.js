@@ -8,6 +8,8 @@ const { initKafka } = require('./kafka');
 const { startWebSocketServer } = require("./websocket");
 const uploadRoutes = require("./routes-upload");
 const client = require("prom-client");
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpec = require('./swagger');
 
 const app = express();
 const server = http.createServer(app);
@@ -23,6 +25,10 @@ app.use(cors({
 }));
 
 app.use(bodyParser.json());
+// Swagger UI and JSON spec
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.get('/docs/swagger.json', (req, res) => res.json(swaggerSpec));
+
 app.use('/api', router);
 app.use("/api", uploadRoutes);
 
