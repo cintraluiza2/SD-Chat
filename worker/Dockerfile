@@ -7,4 +7,11 @@ RUN npm install
 
 COPY src ./src
 
-CMD ["npm", "start"]
+
+# Copia todos os protos necessários do projeto principal
+RUN mkdir -p proto
+COPY proto/*.proto ./proto/
+
+EXPOSE 50051
+
+CMD ["node", "src/start-all.js"]

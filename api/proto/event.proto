@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package event;
+
+service EventService {
+  rpc MessageDelivered (MessageDeliveredRequest) returns (MessageDeliveredResponse);
+}
+
+message MessageDeliveredRequest {
+  int32 message_id = 1;
+  string recipient_username = 2;
+  string status = 3;
+}
+
+message MessageDeliveredResponse {
+  bool ok = 1;
+  string error = 2;
+}

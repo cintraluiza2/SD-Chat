@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package presence;
+
+service PresenceService {
+  rpc UpdatePresence (UpdatePresenceRequest) returns (UpdatePresenceResponse);
+  rpc BeaconPresence (BeaconPresenceRequest) returns (BeaconPresenceResponse);
+}
+
+message UpdatePresenceRequest {
+  string username = 1;
+  bool is_online = 2;
+}
+
+message UpdatePresenceResponse {
+  bool ok = 1;
+  string status = 2;
+  string error = 3;
+}
+
+message BeaconPresenceRequest {
+  string token = 1;
+  bool is_online = 2;
+}
+
+message BeaconPresenceResponse {
+  bool ok = 1;
+  string status = 2;
+  string error = 3;
+}
