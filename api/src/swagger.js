@@ -4,7 +4,7 @@ const options = {
   definition: {
     openapi: '3.0.0',
     info: {
-      title: 'Ubiquitous Communication Platform API',
+      title: 'SD-Chat',
       version: '1.0.0',
       description: 'Documentação automática gerada para a API'
     },
