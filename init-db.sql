@@ -78,6 +78,16 @@ CREATE TABLE IF NOT EXISTS pending_messages (
 CREATE INDEX IF NOT EXISTS idx_pending_messages_recipient ON pending_messages(recipient_username, delivered);
 CREATE INDEX IF NOT EXISTS idx_pending_messages_created ON pending_messages(created_at);
 
+-- Tabela para rastrear status de leitura das mensagens
+CREATE TABLE IF NOT EXISTS message_read_status (
+  message_id INT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  reader_username VARCHAR(50) NOT NULL,
+  read_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (message_id, reader_username)
+);
+
+CREATE INDEX IF NOT EXISTS idx_message_read_status ON message_read_status(message_id);
+
 -- Uma conversa "default" pra facilitar testes
 INSERT INTO conversations (name) VALUES ('demo-conversation')
 ON CONFLICT DO NOTHING;
